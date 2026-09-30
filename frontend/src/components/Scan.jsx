@@ -1,4 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, ArrowRight, CheckCircle2, Circle, ClipboardCopy, Globe, Info, ListChecks, Loader2, MapPin,
+  MessageSquareText, TrendingDown, Users } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card } from '@/components/ui/card'
 import { api, ASSISTANT_NAMES } from '../api.js'
 import { Bars } from './Overview.jsx'
 import { Copyable } from './SiteCheck.jsx'
@@ -8,7 +13,7 @@ const APPS = ['chatgpt', 'gemini', 'perplexity', 'copilot', 'claude']
 function Ring({ value, label, tone }) {
   const R = 54, C = 2 * Math.PI * R, v = value ?? 0
   return (
-    <svg viewBox="0 0 128 128" className={`ring ${tone}`} role="img" aria-label={`${value ?? '—'}% ${label}`}>
+    <svg viewBox="0 0 128 128" className={`score-ring ${tone}`} role="img" aria-label={`${value ?? '—'}% ${label}`}>
       <circle cx="64" cy="64" r={R} className="ring-bg" />
       <circle cx="64" cy="64" r={R} className="ring-fg" strokeDasharray={`${(C * v) / 100} ${C}`} transform="rotate(-90 64 64)" />
       <text x="64" y="66" textAnchor="middle" className="ring-num">{value == null ? '—' : `${value}%`}</text>
@@ -143,36 +148,50 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
   useEffect(() => () => clearInterval(timer.current), [])
 
   if (stage === 'loading') return (
-    <div className="scan-loading">
-      <h1>{S.loadingTitle}</h1>
-      <ol>{S.steps.map((s, i) => <li key={s} className={i < step ? 'done' : i === step ? 'now' : ''}>{s}</li>)}</ol>
+    <div className="v0 mx-auto max-w-lg py-10">
+      <Card className="gap-6 rounded-3xl p-8 shadow-xl shadow-[#17233b]/5">
+        <div className="flex items-center gap-3"><Loader2 className="size-6 animate-spin text-accent" aria-hidden="true" /><h1 className="font-display text-2xl font-bold">{S.loadingTitle}</h1></div>
+        <ol className="space-y-3">
+          {S.steps.map((x, i) => (
+            <li key={x} className={`flex items-center gap-3 ${i < step ? 'text-muted-foreground' : i === step ? 'font-semibold text-foreground' : 'text-muted-foreground/60'}`}>
+              {i < step ? <CheckCircle2 className="size-5 text-success" aria-hidden="true" /> : i === step ? <Loader2 className="size-5 animate-spin text-accent" aria-hidden="true" /> : <Circle className="size-5" aria-hidden="true" />}
+              {x}
+            </li>
+          ))}
+        </ol>
+      </Card>
     </div>
   )
 
+  const field = 'h-11 w-full rounded-xl border border-input bg-card px-3 text-base outline-none focus:ring-2 focus:ring-accent'
   if (stage !== 'report') return (
-    <div className="stack narrow-page">
-      <section className="hero wide"><h1>{stage === 'need' ? S.needTitle : S.title}</h1>
-        <p>{stage !== 'need' ? S.sub : why?.blocked ? (why.marketplace ? S.blockedMarketplace : S.blockedText) : S.needText}</p></section>
-      <form className="panel stack" onSubmit={(e) => { e.preventDefault(); run() }}>
-        <label className="field">{t.landing.urlLabel}<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t.landing.urlPh} /></label>
-        {stage === 'need' && (
-          <div className="form-grid">
-            <label className="field">{t.name}<input value={extra.name} onChange={(e) => setExtra({ ...extra, name: e.target.value })} /></label>
-            <label className="field">{t.city}<input value={extra.city} onChange={(e) => setExtra({ ...extra, city: e.target.value })} placeholder="Houston, TX" /></label>
-            {why?.blocked && (
-              <label className="field">{t.type}
-                <select value={extra.segment} onChange={(e) => setExtra({ ...extra, segment: e.target.value })}>
-                  {['cleaning', 'restaurant', 'trades', 'services', 'ecommerce', 'tech'].map((s) => <option key={s} value={s}>{t.segment[s]}</option>)}
-                </select>
-              </label>
-            )}
+    <div className="v0 mx-auto max-w-2xl py-6">
+      <h1 className="font-display text-4xl font-bold tracking-tight">{stage === 'need' ? S.needTitle : S.title}</h1>
+      <p className="mt-3 text-lg text-muted-foreground">{stage !== 'need' ? S.sub : why?.blocked ? (why.marketplace ? S.blockedMarketplace : S.blockedText) : S.needText}</p>
+      <Card className="mt-6 gap-5 rounded-3xl p-6">
+        <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); run() }}>
+          <label className="block space-y-1.5 text-sm font-medium">{t.landing.urlLabel}<input className={field} value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t.landing.urlPh} /></label>
+          {stage === 'need' && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block space-y-1.5 text-sm font-medium">{t.name}<input className={field} value={extra.name} onChange={(e) => setExtra({ ...extra, name: e.target.value })} /></label>
+              <label className="block space-y-1.5 text-sm font-medium">{t.city}<input className={field} value={extra.city} onChange={(e) => setExtra({ ...extra, city: e.target.value })} placeholder="Houston, TX" /></label>
+              {why?.blocked && (
+                <label className="block space-y-1.5 text-sm font-medium">{t.type}
+                  <select className={field} value={extra.segment} onChange={(e) => setExtra({ ...extra, segment: e.target.value })}>
+                    {['cleaning', 'restaurant', 'trades', 'services', 'ecommerce', 'tech'].map((x) => <option key={x} value={x}>{t.segment[x]}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" size="lg" className="h-12 rounded-xl bg-accent px-6 text-base font-semibold text-accent-foreground hover:bg-accent/90">
+              {stage === 'need' ? S.continue : t.landing.cta} <ArrowRight className="size-4" aria-hidden="true" />
+            </Button>
+            {err && <p className="text-sm text-destructive" role="alert">{err}</p>}
           </div>
-        )}
-        <div className="confirm-bar" style={{ marginTop: 0 }}>
-          <button className="btn marigold" type="submit">{stage === 'need' ? S.continue : t.landing.cta}</button>
-          {err && <p className="error" role="alert">{err}</p>}
-        </div>
-      </form>
+        </form>
+      </Card>
     </div>
   )
 
@@ -195,108 +214,119 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
   const readable = F ? [F.phones.length > 0, F.hours.length > 0, F.prices.length > 0, F.services.length > 0, !!F.area].filter(Boolean).length : 0
   const tone = pct == null ? 'none' : pct >= 60 ? 'good' : pct >= 40 ? 'ok' : 'low'
 
+  const IMPACT = { high: 'bg-destructive/10 text-destructive', medium: 'bg-accent/15 text-[#955f00]', low: 'bg-success/10 text-success' }
+  const stats = [
+    { icon: Globe, value: site.score == null ? '—' : site.score, of: '/100', label: S.statSite },
+    { icon: ListChecks, value: F ? readable : '—', of: '/5', label: S.statFacts },
+    measured
+      ? { icon: Users, value: c.missed, of: `/${c.answers}`, label: S.statLost }
+      : { icon: MessageSquareText, value: c.questions?.length ?? 0, of: '', label: S.statQuestions },
+  ]
+
   return (
-    <div className="report">
+    <div className="v0 mx-auto max-w-5xl space-y-6 pb-6">
       {r.city_conflict && (
-        <div className="city-warning" role="alert">
-          <span>{S.cityConflict(r.city_conflict, b.city)}</span>
-          <button className="btn small" onClick={() => run(url, { name: b.name, city: r.city_conflict, segment: b.segment })}>{S.useCity(r.city_conflict)}</button>
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-5 py-4 text-sm font-medium text-[#955f00]">
+          <span className="flex items-center gap-2"><AlertTriangle className="size-4 shrink-0" aria-hidden="true" />{S.cityConflict(r.city_conflict, b.city)}</span>
+          <Button size="sm" className="rounded-lg" onClick={() => run(url, { name: b.name, city: r.city_conflict, segment: b.segment })}>{S.useCity(r.city_conflict)}</Button>
         </div>
       )}
 
-      <section className="rep-head">
-        <div className="rep-id">
-          <p className="eyebrow">{S.eyebrow}</p>
-          <h1>{b.name}</h1>
-          <p className="muted">{[b.city, t.segment[b.segment]].filter(Boolean).join(' · ')}</p>
-          <p className="rep-lead">{pct == null ? S.leadNone : measured ? (c.answers < 10 ? S.leadFew(pct, c.answers) : S.leadMeasured(pct, c.answers)) : S.leadEstimate(est.low, est.high)}</p>
-          <span className={`src-badge ${measured ? 'real' : 'est'}`}>{measured ? S.badgeMeasured(c.answers) : S.badgeEstimate}</span>
+      <Card className="grid items-center gap-8 rounded-3xl p-6 shadow-xl shadow-[#17233b]/5 md:grid-cols-[1fr_210px] md:p-9">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#955f00]">{S.eyebrow}</p>
+          <h1 className="mt-2 font-display text-4xl font-bold tracking-tight md:text-5xl">{b.name}</h1>
+          <p className="mt-2 flex items-center gap-1.5 text-muted-foreground"><MapPin className="size-4" aria-hidden="true" />{[b.city, t.segment[b.segment]].filter(Boolean).join(' · ')}</p>
+          <p className="mt-5 max-w-xl text-lg">{pct == null ? S.leadNone : measured ? (c.answers < 10 ? S.leadFew(pct, c.answers) : S.leadMeasured(pct, c.answers)) : S.leadEstimate(est.low, est.high)}</p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Badge className={`rounded-full px-3 py-1 ${measured ? 'bg-success text-success-foreground' : 'bg-[#2f63c4]/10 text-[#1f4ea3]'}`}>{measured ? S.badgeMeasured(c.answers) : S.badgeEstimate}</Badge>
+          </div>
           {!measured && est && (
-            <p className="based-on">{S.basedOn}: {est.drivers.map((d) => S.driver[d.id](d)).join(' · ')}</p>
+            <p className="mt-3 flex items-start gap-1.5 text-sm text-muted-foreground"><Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{S.basedOn}: {est.drivers.map((d) => S.driver[d.id](d)).join(' · ')}</p>
           )}
         </div>
-        <Ring value={pct} label={measured ? S.ringMeasured : S.ringEstimate} tone={tone} />
-      </section>
+        <div className="mx-auto w-full max-w-[210px]"><Ring value={pct} label={measured ? S.ringMeasured : S.ringEstimate} tone={tone} /></div>
+      </Card>
 
-      <div className="rep-stats">
-        <div><b>{site.score == null ? '—' : site.score}<small>/100</small></b><span>{S.statSite}</span></div>
-        <div><b>{F ? readable : '—'}<small>/5</small></b><span>{S.statFacts}</span></div>
-        {measured
-          ? <div><b>{c.missed}<small>/{c.answers}</small></b><span>{S.statLost}</span></div>
-          : <div><b>{c.questions?.length ?? 0}</b><span>{S.statQuestions}</span></div>}
+      <div className="grid gap-4 sm:grid-cols-3">
+        {stats.map(({ icon: Icon, value, of, label }) => (
+          <Card key={label} className="flex-row items-start gap-4 rounded-2xl p-5">
+            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground"><Icon className="size-5" aria-hidden="true" /></div>
+            <div><p className="font-display text-3xl font-bold leading-none">{value}<span className="text-base font-medium text-muted-foreground">{of}</span></p><p className="mt-1.5 text-sm text-muted-foreground">{label}</p></div>
+          </Card>
+        ))}
       </div>
 
-      <section className="rep-card">
-        <div className="rep-card-head"><h2>{S.planTitle}</h2><span className="faint">{S.planHint}</span></div>
-        {plan.length === 0 ? <p className="success">{S.planNone}</p> : (
-          <ol className="plan-cards">
+      <Card className="gap-5 rounded-3xl p-6 md:p-7">
+        <div className="flex flex-wrap items-baseline justify-between gap-2"><h2 className="font-display text-2xl font-bold">{S.planTitle}</h2><span className="text-sm text-muted-foreground">{S.planHint}</span></div>
+        {plan.length === 0 ? <p className="font-medium text-success">{S.planNone}</p> : (
+          <ol className="space-y-3">
             {plan.map((p, i) => (
-              <li key={p.title}>
-                <span className="pc-num">{i + 1}</span>
-                <div>
-                  <div className="pc-head"><strong>{p.title}</strong><span className={`impact ${p.impact}`}>{S.impact[p.impact]}</span></div>
-                  <p>{p.text}</p>
-                  {p.why && <p className="faint">{p.why}</p>}
+              <li key={p.title} className="flex gap-4 rounded-2xl border border-border p-4 transition hover:border-accent/50 hover:bg-muted/40">
+                <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary font-bold text-primary-foreground">{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-semibold">{p.title}</p><span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${IMPACT[p.impact]}`}>{S.impact[p.impact]}</span></div>
+                  <p className="mt-1">{p.text}</p>
+                  {p.why && <p className="mt-1.5 text-sm text-muted-foreground">{p.why}</p>}
                 </div>
               </li>
             ))}
           </ol>
         )}
-      </section>
+      </Card>
 
-      <section className="rep-card">
-        <div className="rep-card-head"><h2>{measured ? S.missedTitle : S.likelyTitle}</h2><span className="faint">{measured ? S.missedHint : S.likelyHint}</span></div>
-        {measured ? (r.missed.length === 0 ? <p className="success">{S.missedNone}</p> : (
-          <div className="miss-grid">
-            {r.missed.map((m) => (
-              <article key={m.category}>
-                <div className="pc-head"><strong>{t.checkCategory[m.category] || m.category}</strong><span className="miss-rate">{m.rate}%</span></div>
-                <p className="faint">{m.named_instead?.length ? S.namedHere(m.named_instead.join(', ')) : S.missedRate(m.rate, m.answers)}</p>
-                <p>{m.offered ? S.winOffered(m.category) : S.win[WIN[m.category] || 'best']}</p>
-              </article>
-            ))}
-          </div>
-        )) : (!est || est.likely_missed.length === 0 ? <p className="success">{S.likelyNone}</p> : (
-          <div className="miss-grid">
-            {est.likely_missed.map((m) => (
-              <article key={m.check}>
-                <div className="pc-head"><strong>{m.label}</strong><span className="impact medium">{S.likelyTag}</span></div>
-                <p className="faint">{t.siteCheck[m.check].why}</p>
-              </article>
-            ))}
-          </div>
-        ))}
-      </section>
+      <Card className="gap-5 rounded-3xl p-6 md:p-7">
+        <div className="flex flex-wrap items-baseline justify-between gap-2"><h2 className="font-display text-2xl font-bold">{measured ? S.missedTitle : S.likelyTitle}</h2><span className="text-sm text-muted-foreground">{measured ? S.missedHint : S.likelyHint}</span></div>
+        {(measured ? r.missed.length === 0 : !est || est.likely_missed.length === 0)
+          ? <p className="font-medium text-success">{measured ? S.missedNone : S.likelyNone}</p>
+          : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(measured ? r.missed.map((m) => ({ key: m.category, title: t.checkCategory[m.category] || m.category, tag: `${m.rate}%`,
+                sub: m.named_instead?.length ? S.namedHere(m.named_instead.join(', ')) : S.missedRate(m.rate, m.answers),
+                text: m.offered ? S.winOffered(m.category) : S.win[WIN[m.category] || 'best'] }))
+                : est.likely_missed.map((m) => ({ key: m.check, title: m.label, tag: S.likelyTag, sub: t.siteCheck[m.check].why }))
+              ).map((m) => (
+                <div key={m.key} className="rounded-2xl border border-border p-4">
+                  <div className="flex items-start justify-between gap-3"><p className="flex items-center gap-2 font-semibold"><TrendingDown className="size-4 shrink-0 text-destructive" aria-hidden="true" />{m.title}</p>
+                    <span className="shrink-0 rounded-full bg-accent/15 px-2.5 py-0.5 text-xs font-semibold text-[#955f00]">{m.tag}</span></div>
+                  <p className="mt-2 text-sm text-muted-foreground">{m.sub}</p>
+                  {m.text && <p className="mt-2 text-sm">{m.text}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+      </Card>
 
       {measured && <PromptList S={S} c={c} city={b.city} />}
       {measured && (
-        <div className="two even">
-          <section className="rep-card">
-            <div className="rep-card-head"><h2>{S.wrongTitle}</h2></div>
-            {wrongFacts.length === 0 ? <p className="muted">{S.wrongNone}</p> : (
-              <table className="audit"><tbody>
-                {wrongFacts.map((w, i) => (
-                  <tr key={i}><td>{ASSISTANT_NAMES[w.provider] || w.provider}</td><td>{w.fact}</td>
-                    <td><span className="verdict wrong">{w.value}</span></td><td className="faint">{S.yourSite}: {w.truth}</td></tr>
-                ))}
-              </tbody></table>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card className="gap-4 rounded-3xl p-6">
+            <h2 className="font-display text-xl font-bold">{S.wrongTitle}</h2>
+            {wrongFacts.length === 0 ? <p className="text-muted-foreground">{S.wrongNone}</p> : (
+              <ul className="space-y-2">{wrongFacts.map((w, i) => (
+                <li key={i} className="rounded-xl bg-destructive/5 p-3 text-sm"><span className="font-semibold">{ASSISTANT_NAMES[w.provider] || w.provider}</span> · {w.fact}: <span className="font-semibold text-destructive">{w.value}</span> <span className="text-muted-foreground">({S.yourSite}: {w.truth})</span></li>
+              ))}</ul>
             )}
-          </section>
-          <section className="rep-card">
-            <div className="rep-card-head"><h2>{S.byAssistant}</h2></div>
+          </Card>
+          <Card className="gap-4 rounded-3xl p-6">
+            <h2 className="font-display text-xl font-bold">{S.byAssistant}</h2>
             <Bars items={Object.entries(c.by_assistant).map(([k, v]) => ({ label: ASSISTANT_NAMES[k] || k, value: v }))} />
-          </section>
+          </Card>
         </div>
       )}
 
       {site.fixes && (
-        <details className="rep-card fold">
-          <summary><span><strong>{S.fixesTitle}</strong><span className="faint"> · {S.fixesHint}</span></span></summary>
-          <div className="two even" style={{ marginTop: '0.9rem' }}>
+        <details className="group rounded-3xl border border-border bg-card p-6 shadow-sm">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-xl bg-muted"><ClipboardCopy className="size-5" aria-hidden="true" /></span>
+              <span><span className="block font-semibold">{S.fixesTitle}</span><span className="text-sm text-muted-foreground">{S.fixesHint}</span></span></span>
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted text-lg transition group-open:rotate-45">+</span>
+          </summary>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
             <Copyable t={t} label={t.siteFaqEn} text={site.fixes.faq_en.join('\n')} />
             <Copyable t={t} label={t.siteFaqEs} text={site.fixes.faq_es.join('\n')} />
           </div>
-          <p style={{ marginTop: '0.8rem' }}><button className="linkish" onClick={() => onWebsiteReport({ website: r.url || site.url, name: b.name, city: b.city, segment: b.segment })}>{S.fullSite} →</button></p>
+          <button className="mt-4 text-sm font-medium underline underline-offset-4" onClick={() => onWebsiteReport({ website: r.url || site.url, name: b.name, city: b.city, segment: b.segment })}>{S.fullSite} →</button>
         </details>
       )}
 
@@ -305,13 +335,14 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
           onResult={(res) => { setR({ ...r, check: res.check, missed: res.missed }); window.scrollTo(0, 0) }} />
       )}
 
-      <section className="cta">
-        <div><h2>{S.ctaTitle}</h2><p>{S.ctaText}</p></div>
-        <div className="cta-actions">
-          <button className="btn marigold" disabled={busy} onClick={async () => { setBusy(true); try { const { id } = await api.startTrial(r.check_id); await onStarted(id) } finally { setBusy(false) } }}>{t.startTrial}</button>
-          <button className="btn ghost" onClick={onPlans}>{t.seePlans}</button>
+      <div className="flex flex-col items-start justify-between gap-5 rounded-3xl bg-primary p-7 text-primary-foreground md:flex-row md:items-center md:p-9">
+        <div><h2 className="font-display text-2xl font-bold md:text-3xl">{S.ctaTitle}</h2><p className="mt-2 text-white/70">{S.ctaText}</p></div>
+        <div className="flex shrink-0 flex-wrap gap-3">
+          <Button size="lg" disabled={busy} className="h-12 rounded-xl bg-accent px-6 font-semibold text-accent-foreground hover:bg-accent/90"
+            onClick={async () => { setBusy(true); try { const { id } = await api.startTrial(r.check_id); await onStarted(id) } finally { setBusy(false) } }}>{t.startTrial}</Button>
+          <Button size="lg" variant="outline" className="h-12 rounded-xl border-white/30 bg-transparent text-white hover:bg-white/10 hover:text-white" onClick={onPlans}>{t.seePlans}</Button>
         </div>
-      </section>
+      </div>
     </div>
   )
 }

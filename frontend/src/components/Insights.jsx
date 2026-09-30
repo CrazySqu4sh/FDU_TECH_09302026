@@ -126,8 +126,8 @@ export default function Insights({ bizId, t, mode, onChanged }) {
               ))}
             </div>
             <div className="legend">
-              <span><span className="db-dot yes static" /> {t.whenYes}</span>
-              <span><span className="db-dot no static" /> {t.whenNo}</span>
+              <span><span className="db-dot yes legend-dot" /> {t.whenYes}</span>
+              <span><span className="db-dot no legend-dot" /> {t.whenNo}</span>
             </div>
             <p className="note" style={{ marginTop: '0.75rem' }}>{t.sigNote}</p>
           </section>
