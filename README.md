@@ -60,6 +60,20 @@ The main call to action is **one box: the business's website**. `POST /api/quick
    each), what AI gets wrong, whether AI can read your site, a 5-step action plan and ready-to-paste bilingual Q&A;
 4. "Start free trial" creates the business with everything already filled in. No CSV or CRM needed.
 
+## Sign-up before the free scan, and Leads
+
+The homepage's website box now opens a short **sign-up** (`Signup.jsx`, `POST /api/leads`) before the scan runs:
+- about you: name, email, phone (optional), role
+- your business: name, website, city, type
+- why are you checking today? (fewer calls, competitors show up and I don't, wrong info, curious, Spanish-speaking customers, referred)
+- what problem do you think you have? (can't be found, wrong hours/prices/phone, outdated website, no time, few reviews, not in Spanish)
+- tell us more, and how do you hope we can help (free text)
+- consent to be contacted about the results
+
+The sign-up is linked to its scan and, if they start one, their trial. **Leads** (dashboard top bar, `GET /api/leads`, CSV at
+`/api/leads.csv`) lists every sign-up with their answers, their scan results, the most common reasons and problems, and a
+status (new, contacted, on trial, customer, not a fit). The demo has no staff login; add one before launch.
+
 ## Website check (URL and optional CSV)
 
 "Website check" in the top bar (public, no account) and Fix → Website check (for a customer, also compares their verified

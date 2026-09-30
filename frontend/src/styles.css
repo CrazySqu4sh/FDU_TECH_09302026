@@ -554,3 +554,18 @@ table.edit td { padding: 0.3rem 0.4rem; }
 @media (max-width: 640px) { .topbar .pages.public, .topbar .signin { display: none; } }
 .blocked-note { border-left: 4px solid var(--marigold); }
 .blocked-note p { color: var(--ink-soft); margin-top: 0.5rem; max-width: 75ch; }
+
+/* Sign-up and leads */
+.signup { max-width: 860px; margin: 0 auto; }
+.choice-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.5rem; }
+.choice { display: flex; gap: 0.6rem; align-items: center; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.6rem 0.75rem; cursor: pointer; background: var(--surface); }
+.choice.on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.choice input { width: 1.05rem; height: 1.05rem; accent-color: var(--ink); }
+.consent { display: flex; gap: 0.6rem; align-items: flex-start; font-weight: 500; }
+.consent input { margin-top: 0.3rem; width: 1.05rem; height: 1.05rem; accent-color: var(--ink); }
+.leads-table { min-width: 860px; }
+.leads-table th { padding: 0.6rem 0.8rem; text-align: left; font-size: 0.8rem; color: var(--ink-soft); }
+.leads-table td { padding: 0.7rem 0.8rem; vertical-align: top; }
+.lead-row { cursor: pointer; } .lead-row:hover td { background: var(--paper); }
+.lead-detail td { background: var(--paper); } .lead-detail p { margin-bottom: 0.4rem; }
+.leads-table select { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.3rem 0.4rem; }

@@ -6,10 +6,10 @@ import { Copyable } from './SiteCheck.jsx'
 const WIN = { 'Spanish-speaking': 'spanish', 'Best in category': 'best', 'Prices and reviews': 'prices' }
 
 // One box → one report: what AI says, the customers you're missing, what it gets wrong, and what to do.
-export default function Scan({ t, lang, initialUrl, onStarted, onPlans, onWebsiteReport }) {
+export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, onWebsiteReport }) {
   const S = t.scan
   const [url, setUrl] = useState(initialUrl || '')
-  const [extra, setExtra] = useState({ name: '', city: '', segment: '' })
+  const [extra, setExtra] = useState({ name: lead?.business_name || '', city: lead?.city || '', segment: lead?.segment || '' })
   const [stage, setStage] = useState('form')
   const [step, setStep] = useState(0)
   const [r, setR] = useState(null)
@@ -23,7 +23,7 @@ export default function Scan({ t, lang, initialUrl, onStarted, onPlans, onWebsit
     setErr(''); setStage('loading'); setStep(0)
     timer.current = setInterval(() => setStep((s) => Math.min(s + 1, S.steps.length - 1)), 1300)
     try {
-      const res = await api.quickScan({ url: u.trim(), name: more.name, city: more.city, segment: more.segment || '' })
+      const res = await api.quickScan({ url: u.trim(), name: more.name, city: more.city, segment: more.segment || '', lead_id: lead?.id ?? null })
       if (res.ok) { setR(res); setStage('report') }
       else if (res.need) {
         setExtra({ name: res.business?.name || more.name || '', city: res.business?.city || more.city || '', segment: res.blocked ? (more.segment || 'cleaning') : (res.business?.segment || '') })
@@ -31,7 +31,7 @@ export default function Scan({ t, lang, initialUrl, onStarted, onPlans, onWebsit
       } else { setErr(S.errorKind[res.error_kind] || S.unreachable(res.errors?.[0] || res.url)); setStage('form') }
     } catch (e) { setErr(e.message); setStage('form') } finally { clearInterval(timer.current) }
   }
-  useEffect(() => { if (initialUrl) run(initialUrl) }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (initialUrl) run(initialUrl, extra) }, [])  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => clearInterval(timer.current), [])
 
   if (stage === 'loading') return (

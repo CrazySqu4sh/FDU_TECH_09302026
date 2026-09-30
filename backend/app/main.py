@@ -196,6 +196,104 @@ class QuickScanIn(BaseModel):
     name: str = Field("", max_length=120)
     city: str = Field("", max_length=120)
     segment: str = ""
+    lead_id: int | None = None
+
+
+LEAD_REASONS = {"fewer_calls", "competitors", "wrong_info", "curious", "spanish", "referred", "other"}
+LEAD_ISSUES = {"not_found", "wrong_info", "website", "no_time", "reviews", "spanish", "unsure"}
+LEAD_STATUS = {"new", "contacted", "trial", "customer", "not_fit"}
+
+
+class LeadIn(BaseModel):
+    contact_name: str = Field(min_length=2, max_length=120)
+    email: str = Field(max_length=200, pattern=r"^[^@\s]+@[^@\s]+\.[a-zA-Z]{2,}$")
+    phone: str = Field("", max_length=40)
+    role: str = Field("", max_length=40)
+    business_name: str = Field(min_length=2, max_length=120)
+    website: str = Field(min_length=4, max_length=300)
+    city: str = Field("", max_length=120)
+    segment: str = ""
+    reasons: list[str] = Field(default_factory=list, max_length=7)
+    issues: list[str] = Field(default_factory=list, max_length=7)
+    issue_text: str = Field("", max_length=1000)
+    help_text: str = Field("", max_length=1000)
+    lang: str = "en"
+    consent: bool
+
+
+@app.post("/api/leads", status_code=201)
+def create_lead(body: LeadIn):
+    """Sign-up before the free scan: who they are, why they came, what they think is wrong, how we can help."""
+    if not body.consent:
+        raise HTTPException(422, "Please agree so we can send you your results")
+    with get_db() as db:
+        lid = db.execute(
+            "INSERT INTO leads (created_at, contact_name, email, phone, role, business_name, website, city, segment, "
+            "reasons, issues, issue_text, help_text, lang, consent) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (now(), body.contact_name.strip(), body.email.strip().lower(), body.phone.strip(), body.role,
+             body.business_name.strip(), body.website.strip(), body.city.strip(),
+             body.segment if body.segment in SEGMENTS else "",
+             json.dumps([r for r in body.reasons if r in LEAD_REASONS]), json.dumps([i for i in body.issues if i in LEAD_ISSUES]),
+             body.issue_text.strip(), body.help_text.strip(), body.lang if body.lang in ("en", "es") else "en", 1)).lastrowid
+        return {"id": lid}
+
+
+def _lead_rows(db) -> list[dict]:
+    out = rows(db.execute("SELECT * FROM leads ORDER BY id DESC"))
+    for l in out:
+        l["reasons"], l["issues"] = json.loads(l["reasons"]), json.loads(l["issues"])
+        l["scan"] = None
+        if l["check_id"]:
+            c = row(db.execute("SELECT result FROM checks WHERE id=?", (l["check_id"],)))
+            if c:
+                r = json.loads(c["result"])
+                l["scan"] = {"inclusion": r.get("inclusion"), "inclusion_es": r.get("inclusion_es"), "missed": r.get("missed"),
+                             "wrong_facts": r.get("wrong_facts"), "answers": r.get("answers"), "mode": r.get("mode"),
+                             "site_score": r.get("site_score")}
+    return out
+
+
+@app.get("/api/leads")
+def list_leads():
+    """Internal: everyone who signed up for a free scan, with their answers and results.
+    Demo has no login; before launch this sits behind staff sign-in."""
+    with get_db() as db:
+        return _lead_rows(db)
+
+
+class LeadUpdate(BaseModel):
+    status: str
+    note: str = Field("", max_length=1000)
+
+
+@app.put("/api/leads/{lid}")
+def update_lead(lid: int, body: LeadUpdate):
+    if body.status not in LEAD_STATUS:
+        raise HTTPException(422, f"Status must be one of {sorted(LEAD_STATUS)}")
+    with get_db() as db:
+        db.execute("UPDATE leads SET status=?, note=? WHERE id=?", (body.status, body.note, lid))
+        return {"ok": True}
+
+
+@app.get("/api/leads.csv", response_class=PlainTextResponse)
+def leads_csv():
+    import csv
+    import io
+    with get_db() as db:
+        ls = _lead_rows(db)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["id", "signed_up", "name", "email", "phone", "role", "business", "website", "city", "type", "why_checking",
+                "problems", "tell_us_more", "how_we_can_help", "named_%", "named_es_%", "missed_answers", "wrong_facts",
+                "website_score", "scan_mode", "status", "note"])
+    for l in ls:
+        s = l["scan"] or {}
+        w.writerow([l["id"], l["created_at"], l["contact_name"], l["email"], l["phone"], l["role"], l["business_name"],
+                    l["website"], l["city"], l["segment"], "; ".join(l["reasons"]), "; ".join(l["issues"]), l["issue_text"],
+                    l["help_text"], s.get("inclusion", ""), s.get("inclusion_es", ""), s.get("missed", ""),
+                    s.get("wrong_facts", ""), s.get("site_score", ""), s.get("mode", ""), l["status"], l["note"]])
+    return PlainTextResponse(buf.getvalue(), media_type="text/csv",
+                             headers={"Content-Disposition": "attachment; filename=aparece-leads.csv"})
 
 
 @app.post("/api/quick-scan")
@@ -227,9 +325,12 @@ def quick_scan(body: QuickScanIn):
     req = {"name": b["name"], "category": cat, "category_es": cat_es, "segment": b["segment"], "city": b["city"],
            "website": site["url"], "competitors": [], "facts": facts, "services": services_found}
     check = services.run_check(req)
+    check["site_score"] = None if blocked else site["score"]
     with get_db() as db:
         cid = db.execute("INSERT INTO checks (name, request, result, created_at) VALUES (?,?,?,?)",
                          (b["name"], json.dumps(req), json.dumps(check), now())).lastrowid
+        if body.lead_id:
+            db.execute("UPDATE leads SET check_id=? WHERE id=?", (cid, body.lead_id))
     # Missed opportunities: customer questions where AI named someone else more often than you.
     missed = [q for q in check["by_question"] if min(q["en"] or 0, q["es"] or 0) < 50 and q["category"] != "About your business"]
     offered = {s["label"] for s in services_found}
@@ -254,6 +355,7 @@ def start_trial(cid: int):
             (req["name"], req["category"], req["category_es"], req["segment"], req["city"], req.get("website", ""),
              json.dumps(comps), "trial", now(), now())).lastrowid
         db.execute("UPDATE checks SET business_id=? WHERE id=?", (bid, cid))
+        db.execute("UPDATE leads SET business_id=?, status='trial' WHERE check_id=?", (bid, cid))
         log(db, bid, "trial_started", req["name"], {"check_id": cid})
         if req["facts"]:
             _upsert_facts(db, bid, [FactIn(label=f["label"], label_es=f.get("label_es", ""), value=f["value"],

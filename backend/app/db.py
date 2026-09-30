@@ -176,6 +176,28 @@ CREATE TABLE IF NOT EXISTS proof_runs (
     created_at TEXT NOT NULL,
     results TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    contact_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    phone TEXT DEFAULT '',
+    role TEXT DEFAULT '',
+    business_name TEXT NOT NULL,
+    website TEXT DEFAULT '',
+    city TEXT DEFAULT '',
+    segment TEXT DEFAULT '',
+    reasons TEXT DEFAULT '[]',
+    issues TEXT DEFAULT '[]',
+    issue_text TEXT DEFAULT '',
+    help_text TEXT DEFAULT '',
+    lang TEXT DEFAULT 'en',
+    consent INTEGER NOT NULL,
+    check_id INTEGER REFERENCES checks(id),
+    business_id INTEGER REFERENCES businesses(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'new',
+    note TEXT DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     business_id INTEGER,
