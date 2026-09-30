@@ -8,8 +8,10 @@ Fetches the homepage, robots.txt and a few key pages (services, prices, about, c
 
 Plain code, no AI, no API key, $0. Real sites are fetched live; demo '.example' sites are simulated.
 """
+import gzip
 import json
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -61,21 +63,41 @@ def normalize(url: str) -> str:
     return url.rstrip("/")
 
 
+MARKETPLACES = ("ebay.", "etsy.", "amazon.", "walmart.", "facebook.", "instagram.", "yelp.", "thumbtack.", "angi.")
+
+
 def _get(url: str) -> tuple[int, str]:
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html,text/plain,*/*"})
-    with urllib.request.urlopen(req, timeout=8) as r:
-        return r.status, r.read(1_500_000).decode(r.headers.get_content_charset() or "utf-8", "replace")
+    # We identify ourselves honestly and never try to get around a site's bot protection.
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html,text/plain,*/*",
+                                               "Accept-Language": "en-US,en;q=0.9,es;q=0.8", "Accept-Encoding": "gzip"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        body = r.read(3_000_000)
+        if r.headers.get("Content-Encoding") == "gzip":
+            body = gzip.decompress(body)
+        return r.status, body[:1_500_000].decode(r.headers.get_content_charset() or "utf-8", "replace")
+
+
+def error_kind(e: Exception) -> str:
+    """blocked (the site refuses automated readers), not_found, or unreachable (bad address, down, timeout)."""
+    code = getattr(e, "code", None)
+    if code in (401, 403, 429, 503, 999):
+        return "blocked"
+    if code in (404, 410):
+        return "not_found"
+    return "unreachable"
 
 
 def crawl(url: str) -> dict:
     """Homepage + robots.txt + up to 5 key internal pages."""
     base = normalize(url)
     host = urllib.parse.urlparse(base).netloc
-    out = {"url": base, "pages": [], "robots": "", "errors": []}
+    out = {"url": base, "pages": [], "robots": "", "errors": [], "error_kind": None,
+           "marketplace": any(m in host for m in MARKETPLACES)}
     try:
         status, home = _get(base)
     except Exception as e:
-        out["errors"].append(f"{base}: {type(e).__name__}")
+        out["error_kind"] = error_kind(e)
+        out["errors"].append(f"{getattr(e, 'code', '') or type(e).__name__}")
         return out
     out["pages"].append({"url": base, "html": home})
     try:
@@ -324,7 +346,9 @@ def audit(db, url: str, name: str = "", city: str = "", segment: str = "cleaning
           business_id: int | None = None) -> dict:
     site = demo_crawl(url, db) if agents.domain_of(normalize(url)).endswith(".example") else crawl(url)
     if site is None or not site["pages"]:
-        return {"ok": False, "url": normalize(url), "errors": (site or {}).get("errors") or ["This demo address doesn't exist."]}
+        return {"ok": False, "url": normalize(url), "errors": (site or {}).get("errors") or ["This demo address doesn't exist."],
+                "error_kind": (site or {}).get("error_kind") or "not_found",
+                "marketplace": bool((site or {}).get("marketplace")), "business": {"name": name, "city": city, "segment": segment}}
     d = discover(site, segment)
     if not segment:  # quick scan: let the site say what kind of business it is, then read services for that type
         segment = d["segment_guess"]

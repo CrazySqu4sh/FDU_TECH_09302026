@@ -552,3 +552,5 @@ table.edit td { padding: 0.3rem 0.4rem; }
 .action-plan li::marker { font-weight: 700; color: var(--review); }
 
 @media (max-width: 640px) { .topbar .pages.public, .topbar .signin { display: none; } }
+.blocked-note { border-left: 4px solid var(--marigold); }
+.blocked-note p { color: var(--ink-soft); margin-top: 0.5rem; max-width: 75ch; }

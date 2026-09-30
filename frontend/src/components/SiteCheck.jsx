@@ -47,7 +47,7 @@ export default function SiteCheck({ t, business, prefill, onRunCheck, onStartTri
     setBusy(true); setErr(''); setR(null)
     try {
       const res = await api.siteAudit({ ...form, items, business_id: business?.id ?? null })
-      if (!res.ok) setErr(t.siteUnreachable(res.errors?.[0] || res.url)); else setR(res)
+      if (!res.ok) setErr(t.scan.errorKind[res.error_kind] ? `${t.scan.errorKind[res.error_kind]}${res.marketplace ? ` ${t.scan.marketplaceTip}` : ''}` : t.siteUnreachable(res.errors?.[0] || res.url)); else setR(res)
     } catch (e2) { setErr(e2.message) } finally { setBusy(false) }
   }
 

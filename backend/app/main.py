@@ -208,15 +208,22 @@ def quick_scan(body: QuickScanIn):
     seg = body.segment if body.segment in SEGMENTS else ""
     with get_db() as db:
         site = site_audit.audit(db, body.url, body.name, body.city, seg)
-    if not site["ok"]:
-        return {"ok": False, "errors": site["errors"], "url": site["url"]}
+    blocked = not site["ok"]
+    if blocked and site["error_kind"] != "blocked":
+        # A wrong address or a missing page: nothing to scan. A blocked site still gets a report (below).
+        return {"ok": False, "errors": site["errors"], "error_kind": site["error_kind"], "url": site["url"],
+                "marketplace": site["marketplace"]}
     b = site["business"]
+    if blocked and not b["segment"]:
+        b["segment"] = "services"
     if not b["name"] or not b["city"]:
-        return {"ok": False, "need": [k for k in ("name", "city") if not b[k]], "business": b, "url": site["url"]}
+        return {"ok": False, "need": [k for k in ("name", "city") if not b[k]], "business": b, "url": site["url"],
+                "blocked": blocked, "marketplace": site.get("marketplace", False)}
     cat, cat_es = CATEGORY.get(b["segment"], CATEGORY["services"])
-    facts = [{"label": f["label"], "label_es": f.get("label_es", ""), "value": f["value"], "category": f["category"],
-              "evidence": "document", "source": f["source"]} for f in site["suggested_facts"]]
-    services_found = [s for s in site["found"]["services"]][:3]
+    facts = [] if blocked else [{"label": f["label"], "label_es": f.get("label_es", ""), "value": f["value"],
+                                 "category": f["category"], "evidence": "document", "source": f["source"]}
+                                for f in site["suggested_facts"]]
+    services_found = [] if blocked else site["found"]["services"][:3]
     req = {"name": b["name"], "category": cat, "category_es": cat_es, "segment": b["segment"], "city": b["city"],
            "website": site["url"], "competitors": [], "facts": facts, "services": services_found}
     check = services.run_check(req)
@@ -226,7 +233,7 @@ def quick_scan(body: QuickScanIn):
     # Missed opportunities: customer questions where AI named someone else more often than you.
     missed = [q for q in check["by_question"] if min(q["en"] or 0, q["es"] or 0) < 50 and q["category"] != "About your business"]
     offered = {s["label"] for s in services_found}
-    return {"ok": True, "check_id": cid, "business": b, "check": check, "site": site,
+    return {"ok": True, "check_id": cid, "business": b, "check": check, "site": site, "blocked": blocked,
             "missed": [dict(q, offered=q["category"] in offered) for q in missed]}
 
 

@@ -9,12 +9,13 @@ const WIN = { 'Spanish-speaking': 'spanish', 'Best in category': 'best', 'Prices
 export default function Scan({ t, lang, initialUrl, onStarted, onPlans, onWebsiteReport }) {
   const S = t.scan
   const [url, setUrl] = useState(initialUrl || '')
-  const [extra, setExtra] = useState({ name: '', city: '' })
+  const [extra, setExtra] = useState({ name: '', city: '', segment: '' })
   const [stage, setStage] = useState('form')
   const [step, setStep] = useState(0)
   const [r, setR] = useState(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [why, setWhy] = useState(null)  // { blocked, marketplace } when the site can't be read
   const timer = useRef(null)
 
   async function run(u = url, more = extra) {
@@ -22,10 +23,12 @@ export default function Scan({ t, lang, initialUrl, onStarted, onPlans, onWebsit
     setErr(''); setStage('loading'); setStep(0)
     timer.current = setInterval(() => setStep((s) => Math.min(s + 1, S.steps.length - 1)), 1300)
     try {
-      const res = await api.quickScan({ url: u.trim(), name: more.name, city: more.city })
+      const res = await api.quickScan({ url: u.trim(), name: more.name, city: more.city, segment: more.segment || '' })
       if (res.ok) { setR(res); setStage('report') }
-      else if (res.need) { setExtra({ name: res.business?.name || '', city: res.business?.city || '' }); setStage('need') }
-      else { setErr(S.unreachable(res.errors?.[0] || res.url)); setStage('form') }
+      else if (res.need) {
+        setExtra({ name: res.business?.name || more.name || '', city: res.business?.city || more.city || '', segment: res.blocked ? (more.segment || 'cleaning') : (res.business?.segment || '') })
+        setWhy(res.blocked ? { blocked: true, marketplace: res.marketplace } : null); setStage('need')
+      } else { setErr(S.errorKind[res.error_kind] || S.unreachable(res.errors?.[0] || res.url)); setStage('form') }
     } catch (e) { setErr(e.message); setStage('form') } finally { clearInterval(timer.current) }
   }
   useEffect(() => { if (initialUrl) run(initialUrl) }, [])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -40,13 +43,21 @@ export default function Scan({ t, lang, initialUrl, onStarted, onPlans, onWebsit
 
   if (stage !== 'report') return (
     <div className="stack narrow-page">
-      <section className="hero wide"><h1>{stage === 'need' ? S.needTitle : S.title}</h1><p>{stage === 'need' ? S.needText : S.sub}</p></section>
+      <section className="hero wide"><h1>{stage === 'need' ? S.needTitle : S.title}</h1>
+        <p>{stage !== 'need' ? S.sub : why?.blocked ? (why.marketplace ? S.blockedMarketplace : S.blockedText) : S.needText}</p></section>
       <form className="panel stack" onSubmit={(e) => { e.preventDefault(); run() }}>
         <label className="field">{t.landing.urlLabel}<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t.landing.urlPh} /></label>
         {stage === 'need' && (
           <div className="form-grid">
             <label className="field">{t.name}<input value={extra.name} onChange={(e) => setExtra({ ...extra, name: e.target.value })} /></label>
             <label className="field">{t.city}<input value={extra.city} onChange={(e) => setExtra({ ...extra, city: e.target.value })} placeholder="Houston, TX" /></label>
+            {why?.blocked && (
+              <label className="field">{t.type}
+                <select value={extra.segment} onChange={(e) => setExtra({ ...extra, segment: e.target.value })}>
+                  {['cleaning', 'trades', 'services', 'ecommerce', 'tech'].map((s) => <option key={s} value={s}>{t.segment[s]}</option>)}
+                </select>
+              </label>
+            )}
           </div>
         )}
         <div className="confirm-bar" style={{ marginTop: 0 }}>
@@ -57,7 +68,8 @@ export default function Scan({ t, lang, initialUrl, onStarted, onPlans, onWebsit
     </div>
   )
 
-  const c = r.check, site = r.site, b = r.business
+  const c = r.check, b = r.business
+  const site = r.blocked ? { score: null, checks: [], fixes: null } : r.site
   const named = c.inclusion ?? 0
   const lost = c.missed
   const wrongFacts = c.facts.flatMap((f) => f.said.filter((x) => x.match === false).map((x) => ({ ...x, fact: f.label, truth: f.value })))
@@ -83,7 +95,7 @@ export default function Scan({ t, lang, initialUrl, onStarted, onPlans, onWebsit
         <div className="figure"><b>{named}%</b><span>{S.figNamed}</span></div>
         <div className="figure"><b>{lost}</b><span>{S.figLost(c.answers)}</span></div>
         <div className="figure"><b>{wrongFacts.length}</b><span>{S.figWrong}</span></div>
-        <div className="figure"><b>{site.score}/100</b><span>{S.figSite}</span></div>
+        <div className="figure"><b>{site.score == null ? '—' : `${site.score}/100`}</b><span>{site.score == null ? S.figSiteBlocked : S.figSite}</span></div>
       </div>
 
       <section className="panel">
@@ -108,7 +120,7 @@ export default function Scan({ t, lang, initialUrl, onStarted, onPlans, onWebsit
       <div className="two even">
         <section className="panel">
           <div className="panel-head"><h2>{S.wrongTitle}</h2></div>
-          {wrongFacts.length === 0 ? <p className="muted">{S.wrongNone}</p> : (
+          {wrongFacts.length === 0 ? <p className="muted">{r.blocked ? S.wrongBlocked : S.wrongNone}</p> : (
             <table className="audit"><tbody>
               {wrongFacts.map((w, i) => (
                 <tr key={i}><td>{ASSISTANT_NAMES[w.provider] || w.provider}</td><td>{w.fact}</td>
@@ -125,13 +137,14 @@ export default function Scan({ t, lang, initialUrl, onStarted, onPlans, onWebsit
 
       <section className="panel">
         <div className="panel-head"><h2>{S.planTitle}</h2><span className="faint">{S.planHint}</span></div>
-        <ol className="action-plan">{plan.map((p) => <li key={p}>{p}</li>)}</ol>
-        <div className="two even" style={{ marginTop: '1rem' }}>
+        <ol className="action-plan">{(r.blocked ? [S.planBlocked, ...plan] : plan).map((p) => <li key={p}>{p}</li>)}</ol>
+        {site.fixes && <div className="two even" style={{ marginTop: '1rem' }}>
           <Copyable t={t} label={t.siteFaqEn} text={site.fixes.faq_en.join('\n')} />
           <Copyable t={t} label={t.siteFaqEs} text={site.fixes.faq_es.join('\n')} />
-        </div>
-        <p style={{ marginTop: '0.8rem' }}><button className="linkish" onClick={() => onWebsiteReport({ website: r.url || site.url, name: b.name, city: b.city, segment: b.segment })}>{S.fullSite} →</button></p>
+        </div>}
+        {!r.blocked && <p style={{ marginTop: '0.8rem' }}><button className="linkish" onClick={() => onWebsiteReport({ website: r.url || site.url, name: b.name, city: b.city, segment: b.segment })}>{S.fullSite} →</button></p>}
       </section>
+      {r.blocked && <section className="panel blocked-note"><h2>{S.blockedTitle}</h2><p>{S.blockedReport}</p></section>}
 
       {c.mode === 'demo' && <p className="note">{t.checkSimulated}</p>}
 
