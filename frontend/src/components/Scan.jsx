@@ -59,6 +59,45 @@ function RealAnswers({ S, questions, checkId, onResult }) {
   )
 }
 
+// Transparency: every question exactly as asked, who named the business, and each assistant's full answer.
+function PromptList({ S, c, city }) {
+  const [open, setOpen] = useState(null)
+  const [all, setAll] = useState(false)
+  const rows = c.by_prompt || []
+  const shown = all ? rows : rows.slice(0, 6)
+  return (
+    <section className="panel">
+      <div className="panel-head"><h2>{S.promptsTitle}</h2><span className="faint">{S.promptsHint(rows.length, Object.keys(c.by_assistant || {}).length)}</span></div>
+      <p className="muted" style={{ marginBottom: '0.8rem', maxWidth: '75ch' }}>{c.mode === 'pasted' ? S.promptsPasted : S.promptsHow(city)}</p>
+      <div className="prompts">
+        {shown.map((p, i) => (
+          <div key={p.question} className="prompt">
+            <button className="prompt-row" onClick={() => setOpen(open === i ? null : i)} aria-expanded={open === i}>
+              <span className="lang-tag">{p.language.toUpperCase()}</span>
+              <span className="prompt-q">“{p.question}”</span>
+              <span className="prompt-who">
+                {p.answers.map((a) => <span key={a.provider} className={`who ${a.mentioned ? 'yes' : 'no'}`} title={a.mentioned ? S.namedYouBy : S.notNamedBy}>{ASSISTANT_NAMES[a.provider] || a.provider}</span>)}
+              </span>
+              <b className={p.rate >= 50 ? 'up' : 'down'}>{p.rate}%</b>
+            </button>
+            {open === i && (
+              <div className="prompt-answers">
+                {p.answers.map((a) => (
+                  <div key={a.provider}>
+                    <p className="faint"><strong>{ASSISTANT_NAMES[a.provider] || a.provider}</strong> · {a.mentioned ? S.namedYouBy : S.notNamedBy}</p>
+                    <pre>{a.text}</pre>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {rows.length > 6 && <button className="linkish" style={{ marginTop: '0.7rem' }} onClick={() => setAll(!all)}>{all ? S.showFewer : S.showAll(rows.length)}</button>}
+    </section>
+  )
+}
+
 const WIN = { 'Best in category': 'best', 'Best in town': 'best', 'Prices and reviews': 'prices', 'Open on weekends': 'hours',
   'Open late': 'hours', 'Takeout or delivery': 'delivery', 'Vegetarian options': 'menu' }
 
@@ -177,6 +216,8 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
         )}
         {c.named_instead.length > 0 && <p className="note">{S.instead(c.named_instead.map((x) => x.name).join(', '))}</p>}
       </section>
+
+      <PromptList S={S} c={c} city={b.city} />
 
       <div className="two even">
         <section className="panel">

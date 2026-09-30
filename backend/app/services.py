@@ -648,6 +648,13 @@ def summarize_check(out: list[dict], facts: list[dict], mode: str) -> dict:
         "facts": fact_rows,
         "wrong_facts": sum(f["wrong"] for f in fact_rows),
         "sample": unnamed[0] if unnamed else (out[0] if out else None),
+        # Every question exactly as asked, who named the business, and each assistant's full answer.
+        "by_prompt": [{"question": q, "language": rs[0]["language"], "category": rs[0]["category"], "rate": rate(rs),
+                       "named_by": [r["provider"] for r in rs if r["mentioned"]],
+                       "answers": [{"provider": r["provider"], "mentioned": r["mentioned"], "text": r["text"][:1500]}
+                                   for r in rs]}
+                      for q, rs in ((q, [r for r in out if r["question"] == q])
+                                    for q in dict.fromkeys(r["question"] for r in out))],
     }
 
 
