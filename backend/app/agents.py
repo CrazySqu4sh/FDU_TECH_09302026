@@ -20,6 +20,8 @@ CLAUDE_UTILITY_MODEL = os.getenv("CLAUDE_UTILITY_MODEL", "claude-haiku-4-5-20251
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_WEB_TOOL = os.getenv("OPENAI_WEB_TOOL", "web_search")
 MAX_JOURNEYS = int(os.getenv("MAX_JOURNEYS", "12"))
+# Languages each free-scan question is asked in (templates exist for en and es; add more by adding templates).
+SCAN_LANGUAGES = [x.strip() for x in os.getenv("SCAN_LANGUAGES", "en,es").split(",") if x.strip()]
 
 DEMO_PROVIDERS = ["chatgpt", "claude", "gemini", "perplexity"]
 DAYS_ES = {"monday": "lunes", "tuesday": "martes", "wednesday": "miércoles", "thursday": "jueves",
@@ -400,18 +402,20 @@ def check_journeys(biz: dict, facts: list[dict], services: list[dict] | None = N
         (f"What is the best {cat} {where}?", f"¿Cuál es el mejor {cat_es} {where_es}?", "Best in category"),
         (f"Which {cat} {where} has fair prices and good reviews?",
          f"¿Qué {cat_es} {where_es} tiene buenos precios y buenas reseñas?", "Prices and reviews"),
-        (f"Is there a {cat} {where} where they speak Spanish?", f"¿Hay algún {cat_es} {where_es} donde hablen español?",
-         "Spanish-speaking"),
+        (f"Which {cat} {where} is open on weekends?", f"¿Qué {cat_es} {where_es} abre los fines de semana?",
+         "Open on weekends"),
         (f"What do you know about {name}? Is it a good choice?", f"¿Qué sabes de {name}? ¿Es buena opción?",
          "About your business"),
     ]
     for s in (services or [])[:3]:  # "Who does move-out cleaning in Houston?": the questions that bring jobs
         pairs.append((f"Who offers {s['label'].lower()} {where}?",
                       f"¿Quién ofrece {(s.get('label_es') or s['label']).lower()} {where_es}?", s["label"]))
+    # Every question is asked in each scan language; results are combined per question, not compared by language.
     js = []
     for en, es, category in pairs:
-        js.append({"question": en, "language": "en", "category": category, "related_facts": keys})
-        js.append({"question": es, "language": "es", "category": category, "related_facts": keys})
+        for lang, q in (("en", en), ("es", es)):
+            if lang in SCAN_LANGUAGES:
+                js.append({"question": q, "language": lang, "category": category, "related_facts": keys})
     return js
 
 

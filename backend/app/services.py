@@ -593,9 +593,14 @@ def run_check(req: dict) -> dict:
         "inclusion": rate(out), "inclusion_en": rate([r for r in out if r["language"] == "en"]),
         "inclusion_es": rate([r for r in out if r["language"] == "es"]),
         "by_assistant": {p: rate([r for r in out if r["provider"] == p]) for p in dict.fromkeys(r["provider"] for r in out)},
-        "by_question": [{"category": c, "en": rate([r for r in out if r["category"] == c and r["language"] == "en"]),
+        "by_question": [{"category": c, "rate": rate([r for r in out if r["category"] == c]),
+                         "answers": sum(1 for r in out if r["category"] == c),
+                         "named_instead": [n for n, _ in Counter(x for r in out if r["category"] == c and not r["mentioned"]
+                                                                  for x in r["competitors"]).most_common(2)],
+                         "en": rate([r for r in out if r["category"] == c and r["language"] == "en"]),
                          "es": rate([r for r in out if r["category"] == c and r["language"] == "es"])}
                         for c in dict.fromkeys(r["category"] for r in out)],
+        "languages": sorted({r["language"] for r in out}),
         "named_instead": [{"name": n, "count": k} for n, k in instead],
         "missed": len(unnamed),
         "facts": fact_rows,

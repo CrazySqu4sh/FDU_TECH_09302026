@@ -3,7 +3,7 @@ import { api, ASSISTANT_NAMES } from '../api.js'
 import { Bars } from './Overview.jsx'
 import { Copyable } from './SiteCheck.jsx'
 
-const WIN = { 'Spanish-speaking': 'spanish', 'Best in category': 'best', 'Prices and reviews': 'prices' }
+const WIN = { 'Best in category': 'best', 'Prices and reviews': 'prices', 'Open on weekends': 'hours' }
 
 // One box → one report: what AI says, the customers you're missing, what it gets wrong, and what to do.
 export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, onWebsiteReport }) {
@@ -75,20 +75,19 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
   const wrongFacts = c.facts.flatMap((f) => f.said.filter((x) => x.match === false).map((x) => ({ ...x, fact: f.label, truth: f.value })))
   const failed = site.checks.filter((x) => !x.pass).sort((a, b2) => b2.weight - a.weight)
   const offeredMissed = r.missed.filter((m) => m.offered)
-  const gap = (c.inclusion_en ?? 0) - (c.inclusion_es ?? 0)
   const plan = [
     ...wrongFacts.slice(0, 1).map((w) => S.planWrong(w.fact, ASSISTANT_NAMES[w.provider] || w.provider)),
     ...offeredMissed.slice(0, 2).map((m) => S.planService(m.category)),
-    ...(gap >= 10 ? [S.planSpanish(c.inclusion_en, c.inclusion_es)] : []),
     ...failed.slice(0, 3).map((x) => `${t.siteCheck[x.id].title}: ${t.siteCheck[x.id].fix(x.detail)}`),
   ].slice(0, 5)
 
   return (
     <div className="stack">
+      {c.mode === 'demo' && <p className="sim-banner" role="note">{S.simBanner}</p>}
       <section className="hero wide">
         <p className="eyebrow">{S.eyebrow}</p>
         <h1>{S.headline(b.name, named)}</h1>
-        <p>{S.subline(c.inclusion_en, c.inclusion_es, lost)}</p>
+        <p>{S.subline(lost, c.answers, c.languages?.length || 1)}</p>
       </section>
 
       <div className="figures">
@@ -106,10 +105,10 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
               <article key={m.category} className="missed">
                 <div>
                   <h3>{t.checkCategory[m.category] || m.category}{m.offered && <span className="tag offered">{S.youOffer}</span>}</h3>
-                  <p className="faint">{S.missedRates(m.en, m.es)}</p>
+                  <p className="faint">{S.missedRate(m.rate, m.answers)}{m.named_instead?.length ? ` ${S.namedHere(m.named_instead.join(', '))}` : ''}</p>
                   <p className="win"><strong>{S.howToWin}:</strong> {m.offered ? S.winOffered(m.category) : S.win[WIN[m.category] || 'best']}</p>
                 </div>
-                <Bars items={[{ label: 'EN', value: m.en ?? 0 }, { label: 'ES', value: m.es ?? 0 }]} />
+                <Bars items={[{ label: S.namedYou, value: m.rate ?? 0 }]} />
               </article>
             ))}
           </div>
@@ -146,8 +145,7 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
       </section>
       {r.blocked && <section className="panel blocked-note"><h2>{S.blockedTitle}</h2><p>{S.blockedReport}</p></section>}
 
-      {c.mode === 'demo' && <p className="note">{t.checkSimulated}</p>}
-
+      
       <section className="cta">
         <div><h2>{S.ctaTitle}</h2><p>{S.ctaText}</p></div>
         <div className="cta-actions">

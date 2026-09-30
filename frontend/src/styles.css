@@ -569,3 +569,4 @@ table.edit td { padding: 0.3rem 0.4rem; }
 .lead-row { cursor: pointer; } .lead-row:hover td { background: var(--paper); }
 .lead-detail td { background: var(--paper); } .lead-detail p { margin-bottom: 0.4rem; }
 .leads-table select { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.3rem 0.4rem; }
+.sim-banner { background: var(--review-wash); color: var(--review); border: 1px solid #955f0055; border-radius: var(--radius); padding: 0.7rem 1rem; font-weight: 600; }

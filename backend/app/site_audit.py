@@ -199,6 +199,8 @@ def discover(site: dict, segment: str) -> dict:
              and (reader.HOURS.search(line) or reader.CLOSED.search(line))][:7]
     area = re.search(r"(?:serving|service areas?|areas we serve|we serve|zona de servicio|servimos)[:\s]+([^\n.]{3,160})",
                      text, re.I)
+    if area and not re.search(r",| and | y |\b(" + STATES + r")\b", area.group(1)):
+        area = None  # "Serving Mexico City street food" is a slogan, not a service area; a real area lists places
     words = SERVICE_WORDS.get(segment) or [w for v in SERVICE_WORDS.values() for w in v]
     services = [{"label": en, "label_es": es} for en, es, rx in words if re.search(rx, text, re.I)]
     # Who and where: structured data first, then the page's own title / text.
@@ -356,7 +358,7 @@ def audit(db, url: str, name: str = "", city: str = "", segment: str = "cleaning
     name, city = name or d["name"], city or d["city"]
     cs = checks(d, site, name, city)
     score = sum(c["weight"] for c in cs if c["pass"])
-    res = {"ok": True, "url": site["url"], "business": {"name": name, "city": city, "segment": segment}, "simulated": bool(site.get("simulated")), "errors": site["errors"],
+    res = {"ok": True, "url": site["url"], "business": {"name": name, "city": city, "segment": segment}, "found_name": d["name"], "simulated": bool(site.get("simulated")), "errors": site["errors"],
            "pages_read": d["pages_read"], "score": score, "checks": cs,
            "found": {k: d[k] for k in ("title", "description", "phones", "prices", "hours", "area", "services", "trust",
                                        "spanish", "faq", "jsonld_types")},

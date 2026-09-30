@@ -312,6 +312,11 @@ def quick_scan(body: QuickScanIn):
         return {"ok": False, "errors": site["errors"], "error_kind": site["error_kind"], "url": site["url"],
                 "marketplace": site["marketplace"]}
     b = site["business"]
+    # A typed name that looks like a web address ("Taqueriadediez") loses to the name the website states.
+    typed = body.name.strip()
+    found = (site.get("found_name") or "").strip()
+    if found and typed and " " not in typed and typed.lower().replace("-", "") in body.url.lower().replace("-", ""):
+        b["name"] = found
     if blocked and not b["segment"]:
         b["segment"] = "services"
     if not b["name"] or not b["city"]:
@@ -332,7 +337,7 @@ def quick_scan(body: QuickScanIn):
         if body.lead_id:
             db.execute("UPDATE leads SET check_id=? WHERE id=?", (cid, body.lead_id))
     # Missed opportunities: customer questions where AI named someone else more often than you.
-    missed = [q for q in check["by_question"] if min(q["en"] or 0, q["es"] or 0) < 50 and q["category"] != "About your business"]
+    missed = [q for q in check["by_question"] if (q["rate"] or 0) < 50 and q["category"] != "About your business"]
     offered = {s["label"] for s in services_found}
     return {"ok": True, "check_id": cid, "business": b, "check": check, "site": site, "blocked": blocked,
             "missed": [dict(q, offered=q["category"] in offered) for q in missed]}

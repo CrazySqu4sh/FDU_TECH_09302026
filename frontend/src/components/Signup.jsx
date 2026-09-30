@@ -2,15 +2,15 @@ import { useState } from 'react'
 import { api } from '../api.js'
 
 const SEGMENTS = ['cleaning', 'trades', 'services', 'ecommerce', 'tech']
-const REASONS = ['fewer_calls', 'competitors', 'wrong_info', 'curious', 'spanish', 'referred', 'other']
-const ISSUES = ['not_found', 'wrong_info', 'website', 'no_time', 'reviews', 'spanish', 'unsure']
+const REASONS = ['fewer_calls', 'competitors', 'wrong_info', 'curious', 'referred', 'other']
+const ISSUES = ['not_found', 'wrong_info', 'website', 'no_time', 'reviews', 'unsure']
 const ROLES = ['owner', 'manager', 'marketing', 'other']
 
 // Sign-up before the free scan: who they are, why they came, and what they think we can help with.
 export default function Signup({ t, lang, initialUrl, onDone }) {
   const S = t.signup
   const [f, setF] = useState({ contact_name: '', email: '', phone: '', role: 'owner', business_name: '', website: initialUrl || '',
-    city: '', segment: 'cleaning', reasons: [], issues: [], issue_text: '', help_text: '', consent: false })
+    city: '', segment: '', reasons: [], issues: [], issue_text: '', help_text: '', consent: false })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => { setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }); setErr('') }
@@ -51,7 +51,7 @@ export default function Signup({ t, lang, initialUrl, onDone }) {
           <label className="field">{S.bizName} *<input value={f.business_name} onChange={set('business_name')} autoComplete="organization" /></label>
           <label className="field">{S.website} *<input value={f.website} onChange={set('website')} placeholder="yourbusiness.com" /></label>
           <label className="field">{S.city}<input value={f.city} onChange={set('city')} placeholder="Houston, TX" /></label>
-          <label className="field">{t.type}<select value={f.segment} onChange={set('segment')}>{SEGMENTS.map((s) => <option key={s} value={s}>{t.segment[s]}</option>)}</select></label>
+          <label className="field">{t.type}<select value={f.segment} onChange={set('segment')}><option value="">{S.detectType}</option>{SEGMENTS.map((s) => <option key={s} value={s}>{t.segment[s]}</option>)}</select></label>
         </div>
       </section>
 
