@@ -11,6 +11,23 @@ import random
 from collections import defaultdict
 import re
 
+
+def _load_dotenv():
+    """Read backend/.env so keys work without exporting them by hand. Real environment variables win."""
+    path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if not os.path.exists(path):
+        return
+    for line in open(path, encoding="utf-8"):
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            v = v.strip().strip('"').strip("'")
+            if k.strip() and v and k.strip() not in os.environ:
+                os.environ[k.strip()] = v
+
+
+_load_dotenv()
+
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 DEMO_MODE = os.getenv("DEMO_MODE", "auto").lower()
