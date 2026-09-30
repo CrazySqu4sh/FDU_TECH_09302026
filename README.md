@@ -241,8 +241,8 @@ turns the check into a business on the trial.
 
 ## Go live with real assistants
 
-Copy `backend/.env.example` to `backend/.env`, add `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`,
-then load it before starting (`export $(cat .env | xargs)` on Mac/Linux). With keys present,
+Copy `backend/.env.example` to `backend/.env`, add `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`, and restart the
+backend (it reads `backend/.env` automatically; `.env` is git-ignored, never commit it). With keys present,
 scans ask Claude and ChatGPT for real (with web search) and a cheap model extracts claims.
 Gemini and Perplexity appear only in demo mode until you add their clients in `agents.py`.
 Check each provider's current model names and web-search tool names in their docs.
