@@ -161,6 +161,11 @@ def demo_crawl(url: str, db) -> dict | None:
 
 # ------------------------------------------------------------ reading
 
+GENERIC_NAMES = re.compile(r"^(the )?(tacos?|taquer[ií]a|pizza|pizzeria|sushi|burgers?|bbq|food|restaurant|restaurante|cafe|"
+                           r"caf[eé]|coffee|bakery|panader[ií]a|cleaning|cleaners?|limpieza|maids?|roofing|roofers?|"
+                           r"contractor|plumbing|plumber|auto repair|taller|shop|store|tienda|my business|business|test)$", re.I)
+
+
 def robots_blocked(robots: str, bot: str) -> bool:
     """True if robots.txt disallows the whole site for this bot (its own group, or '*' when it has none)."""
     groups, cur, agents_ = {}, [], False
@@ -434,6 +439,7 @@ def audit(db, url: str, name: str = "", city: str = "", segment: str = "cleaning
     cs = checks(d, site, name, city, segment)
     score = sum(c["weight"] for c in cs if c["pass"])
     res = {"ok": True, "url": site["url"], "business": {"name": name, "city": city, "segment": segment}, "found_name": d["name"],
+           "found_city": d["city"],
            "cuisine": d["cuisine"], "style": d["style"], "michelin": d["michelin"], "simulated": bool(site.get("simulated")), "errors": site["errors"],
            "pages_read": d["pages_read"], "score": score, "checks": cs,
            "found": {k: d[k] for k in ("title", "description", "phones", "prices", "hours", "area", "services", "trust",

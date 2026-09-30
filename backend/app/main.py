@@ -315,7 +315,9 @@ def quick_scan(body: QuickScanIn):
     # A typed name that looks like a web address ("Taqueriadediez") loses to the name the website states.
     typed = body.name.strip()
     found = (site.get("found_name") or "").strip()
-    if found and typed and " " not in typed and typed.lower().replace("-", "") in body.url.lower().replace("-", ""):
+    # A typed name that is a web address ("Taqueriadediez") or a generic word ("Tacos") loses to the site's own name.
+    if found and typed and ((" " not in typed and typed.lower().replace("-", "") in body.url.lower().replace("-", ""))
+                            or site_audit.GENERIC_NAMES.match(typed)):
         b["name"] = found
     if blocked and not b["segment"]:
         b["segment"] = "services"
@@ -342,7 +344,12 @@ def quick_scan(body: QuickScanIn):
     # Missed opportunities: customer questions where AI named someone else more often than you.
     missed = [q for q in check["by_question"] if (q["rate"] or 0) < 50 and q["category"] != "About your business"]
     offered = {s["label"] for s in services_found}
+    # If the typed city differs from the city the website states, keep the typed one but say so.
+    site_city = (site.get("found_city") or "").strip()
+    norm = lambda x: re.sub(r"[^a-z]", "", x.split(",")[0].lower())  # noqa: E731
+    city_conflict = site_city if site_city and b["city"] and norm(site_city) != norm(b["city"]) else None
     return {"ok": True, "check_id": cid, "business": b, "check": check, "site": site, "blocked": blocked,
+            "city_conflict": city_conflict,
             "missed": [dict(q, offered=q["category"] in offered) for q in missed]}
 
 

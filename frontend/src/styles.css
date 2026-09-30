@@ -596,3 +596,4 @@ table.edit td { padding: 0.3rem 0.4rem; }
 .prompt-answers pre { white-space: pre-wrap; font-family: var(--body); background: var(--surface); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; margin: 0.3rem 0 0; font-size: 0.9rem; }
 .pending-banner { background: #e8f0fc; color: #1f4ea3; border: 1px solid #2f63c455; border-radius: var(--radius); padding: 0.7rem 1rem; font-weight: 600; }
 .q-chip .lang-tag, .prompt-row .lang-tag { margin-right: 0.45rem; }
+.city-warning { display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--review-wash); color: var(--review); border: 1px solid #955f0055; border-radius: var(--radius); padding: 0.7rem 1rem; font-weight: 600; }

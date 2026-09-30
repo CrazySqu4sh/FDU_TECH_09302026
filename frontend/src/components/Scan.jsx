@@ -181,6 +181,12 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
   return (
     <div className="stack">
       {c.mode === 'demo' && <p className="sim-banner" role="note">{S.simBanner}</p>}
+      {r.city_conflict && (
+        <div className="city-warning" role="alert">
+          <span>{S.cityConflict(r.city_conflict, b.city)}</span>
+          <button className="btn small" onClick={() => run(url, { name: b.name, city: r.city_conflict, segment: b.segment })}>{S.useCity(r.city_conflict)}</button>
+        </div>
+      )}
       {pending && <p className="pending-banner" role="note">{S.pendingBanner}</p>}
       {c.mode === 'pasted' && <p className="real-banner" role="note">{S.realBanner(c.answers)}</p>}
       {c.mode !== 'live' && c.questions && (
