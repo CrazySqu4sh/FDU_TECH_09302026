@@ -1,0 +1,92 @@
+/*
+  Tailwind v4 + shadcn/ui, set up so v0 components drop in without changing the existing screens.
+  Layer order: Tailwind theme → base → the app's original styles (styles.css) → components → utilities.
+  Original styles are layered below utilities, so Tailwind classes on v0 components always win,
+  and screens without Tailwind classes look exactly as before.
+*/
+@layer theme, base, legacy, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+@import "./styles.css" layer(legacy);
+
+@custom-variant dark (&:is(.dark *));
+
+/* Aparece palette as shadcn/ui tokens (navy #17233b, marigold #e8a317, off-white paper). */
+:root {
+  --radius: 0.625rem;
+  --background: #f3f5f8;
+  --foreground: #17233b;
+  --card: #ffffff;
+  --card-foreground: #17233b;
+  --popover: #ffffff;
+  --popover-foreground: #17233b;
+  --primary: #17233b;
+  --primary-foreground: #ffffff;
+  --secondary: #fdf3dc;
+  --secondary-foreground: #17233b;
+  --muted: #eef1f5;
+  --muted-foreground: #4a5670;
+  --accent: #e8a317;
+  --accent-foreground: #17233b;
+  --destructive: #b93427;
+  --border: #d8dde6;
+  --input: #d8dde6;
+  --ring: #e8a317;
+  --chart-1: #2f63c4;
+  --chart-2: #c47f0a;
+  --chart-3: #8a4fbf;
+  --chart-4: #1f7a4d;
+  --chart-5: #b93427;
+  --success: #1f7a4d;
+  --success-foreground: #ffffff;
+}
+
+@theme inline {
+  --font-sans: 'Figtree', system-ui, -apple-system, sans-serif;
+  --font-display: 'Bricolage Grotesque', 'Figtree', system-ui, sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+}
+
+/*
+  Tailwind's base reset, applied only inside v0/shadcn screens (wrap them in <div className="v0">),
+  so the existing screens keep their current look.
+*/
+@layer base {
+  .v0, .v0 *, .v0 ::before, .v0 ::after { box-sizing: border-box; border: 0 solid var(--color-border); margin: 0; padding: 0; }
+  .v0 { font-family: var(--font-sans); color: var(--color-foreground); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .v0 h1, .v0 h2, .v0 h3, .v0 h4 { font-size: inherit; font-weight: inherit; font-family: inherit; line-height: inherit; letter-spacing: normal; }
+  .v0 ol, .v0 ul { list-style: none; }
+  .v0 img, .v0 svg, .v0 video { display: block; max-width: 100%; }
+  .v0 button, .v0 input, .v0 select, .v0 textarea { font: inherit; color: inherit; background: transparent; }
+  .v0 a { color: inherit; text-decoration: inherit; }
+  .v0 * { outline-color: color-mix(in oklab, var(--color-ring) 50%, transparent); }
+}

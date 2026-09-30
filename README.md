@@ -278,5 +278,19 @@ owner produce "Needs a person" instead of "Wrong."
 - Next steps: live Shopify/eBay/Square sync, source investigation (which listing caused the error), POS/Shopify/eBay sync,
   WhatsApp approvals, PostgreSQL, logins with ownership verification.
 
+## Designing screens with v0
+
+The frontend has Tailwind CSS v4 and shadcn/ui set up (`frontend/src/tailwind.css`, `components.json`, `@/` path alias),
+themed with Aparece's colors, so v0 components drop in:
+
+1. Design in v0.app (React + Tailwind + shadcn/ui).
+2. Add it: `cd frontend && npx shadcn@latest add "<v0 share link>"`, or paste the code into `src/components/`.
+   shadcn writes plain `.jsx` here (`"tsx": false` in `components.json`).
+3. Wrap v0 screens in `<div className="v0">…</div>`: that applies Tailwind's base reset only there, so existing screens keep
+   their look. The app's original CSS sits in a lower layer, so Tailwind classes always win inside v0 components.
+4. Replace v0's sample data with Aparece's API data (`src/api.js`) and text (`src/i18n.js`).
+
+`?page=ui` is an unlinked design-check page that shows shadcn components in the Aparece theme.
+
 ## Stack
-FastAPI + SQLite (swap for PostgreSQL), React + Vite. No UI libraries.
+FastAPI + SQLite (swap for PostgreSQL), React + Vite, Tailwind CSS v4 + shadcn/ui for v0-designed screens.

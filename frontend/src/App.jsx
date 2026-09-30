@@ -23,6 +23,7 @@ import Landing from './components/Landing.jsx'
 import Scan from './components/Scan.jsx'
 import Signup from './components/Signup.jsx'
 import Leads from './components/Leads.jsx'
+import UiPreview from './components/UiPreview.jsx'
 
 // Five sections instead of a long row of tabs. Each section keeps its screens one click away.
 const GROUPS = [
@@ -46,7 +47,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   // The homepage is the front door; deep links (?biz=, ?tab=, ?page=) open straight into the app.
-  const [view, setView] = useState(() => (['check', 'plans', 'site', 'scan', 'home', 'signup', 'leads'].includes(params.get('page')) ? params.get('page')
+  const [view, setView] = useState(() => (['check', 'plans', 'site', 'scan', 'home', 'signup', 'leads', 'ui'].includes(params.get('page')) ? params.get('page')
     : params.get('biz') || params.get('tab') ? 'app' : 'home'))
   const [scanUrl, setScanUrl] = useState('')
   const [lead, setLead] = useState(null)
@@ -144,6 +145,8 @@ export default function App() {
       ) : view === 'signup' ? (
         <main><Signup key={scanUrl} t={t} lang={lang} initialUrl={scanUrl}
           onDone={(l) => { setLead(l); setScanUrl(l.website); setView('scan'); window.scrollTo(0, 0) }} /></main>
+      ) : view === 'ui' ? (
+        <main><UiPreview /></main>
       ) : view === 'leads' ? (
         <main><Leads t={t} /></main>
       ) : view === 'scan' ? (
