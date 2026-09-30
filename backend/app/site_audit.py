@@ -40,6 +40,15 @@ SERVICE_WORDS = {
 }
 TRUST = [("insured", r"insured|bonded|asegurad|con seguro|fianza"), ("licensed", r"licen[cs]ed|licencia"),
          ("background", r"background[\s-]*check|antecedentes"), ("guarantee", r"guarantee|garant[ií]a|satisfaction")]
+STATES = ("AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|"
+          "OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC")
+CITY = re.compile(rf"\b([A-Z][a-zA-Z.]+(?: [A-Z][a-zA-Z.]+){{0,2}}),\s?({STATES})\b")
+SEGMENT_HINTS = {  # guess the business type from the site's own words
+    "cleaning": r"\bclean|maid|janitorial|housekeep|limpieza",
+    "trades": r"\broof|remodel|plumb|hvac|contractor|landscap|painting|electrician|handyman|techo",
+    "tech": r"\blaptop|refurbish|phone repair|iphone|computer repair",
+    "ecommerce": r"add to cart|shop now|free shipping|checkout",
+}
 ES_WORDS = re.compile(r"\b(limpieza|servicio|nuestro|llámenos|llamenos|cotización|preguntas|hablamos|se habla|español|precios|horario)\b", re.I)
 
 
@@ -170,8 +179,25 @@ def discover(site: dict, segment: str) -> dict:
                      text, re.I)
     words = SERVICE_WORDS.get(segment) or [w for v in SERVICE_WORDS.values() for w in v]
     services = [{"label": en, "label_es": es} for en, es, rx in words if re.search(rx, text, re.I)]
+    # Who and where: structured data first, then the page's own title / text.
+    name = ""
+    for b in blocks if isinstance(blocks, list) else []:
+        for o in (b if isinstance(b, list) else [b]):
+            if isinstance(o, dict) and o.get("name") and o.get("@type") not in ("WebPage", "WebSite", "BreadcrumbList"):
+                name = str(o["name"]).strip()
+                break
+        if name:
+            break
+    name = name or _meta(home, "og:site_name") or (re.split(r"\s[|\-–—:]\s", re.sub(r"\s+", " ", title.group(1)).strip())[0]
+                                                   if title else "")
+    loc = re.search(r'"addresslocality"\s*:\s*"([^"]+)".{0,200}?"addressregion"\s*:\s*"([^"]+)"', ld)
+    city_m = CITY.search(text)
+    city = f"{loc.group(1).title()}, {loc.group(2).upper()}" if loc else (f"{city_m.group(1)}, {city_m.group(2)}" if city_m else "")
+    scores = {seg: len(re.findall(rx, text, re.I)) for seg, rx in SEGMENT_HINTS.items()}
+    guess = max(scores, key=scores.get) if max(scores.values()) >= 3 else "services"
     lang_es = bool(re.search(r'hreflang=["\']es|lang=["\']es', " ".join(htmls), re.I)) or len(ES_WORDS.findall(text)) >= 6
     return {
+        "name": name[:80], "city": city, "segment_guess": guess,
         "text": text, "pages_read": [p["url"] for p in site["pages"]],
         "title": re.sub(r"\s+", " ", title.group(1)).strip() if title else "",
         "description": _meta(home, "description") or _meta(home, "og:description"),
@@ -300,9 +326,13 @@ def audit(db, url: str, name: str = "", city: str = "", segment: str = "cleaning
     if site is None or not site["pages"]:
         return {"ok": False, "url": normalize(url), "errors": (site or {}).get("errors") or ["This demo address doesn't exist."]}
     d = discover(site, segment)
+    if not segment:  # quick scan: let the site say what kind of business it is, then read services for that type
+        segment = d["segment_guess"]
+        d = discover(site, segment)
+    name, city = name or d["name"], city or d["city"]
     cs = checks(d, site, name, city)
     score = sum(c["weight"] for c in cs if c["pass"])
-    res = {"ok": True, "url": site["url"], "simulated": bool(site.get("simulated")), "errors": site["errors"],
+    res = {"ok": True, "url": site["url"], "business": {"name": name, "city": city, "segment": segment}, "simulated": bool(site.get("simulated")), "errors": site["errors"],
            "pages_read": d["pages_read"], "score": score, "checks": cs,
            "found": {k: d[k] for k in ("title", "description", "phones", "prices", "hours", "area", "services", "trust",
                                        "spanish", "faq", "jsonld_types")},

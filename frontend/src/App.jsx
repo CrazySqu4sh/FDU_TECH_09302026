@@ -19,6 +19,8 @@ import Insights from './components/Insights.jsx'
 import Assistant from './components/Assistant.jsx'
 import ProofLab from './components/ProofLab.jsx'
 import SiteCheck from './components/SiteCheck.jsx'
+import Landing from './components/Landing.jsx'
+import Scan from './components/Scan.jsx'
 
 // Five sections instead of a long row of tabs. Each section keeps its screens one click away.
 const GROUPS = [
@@ -41,7 +43,11 @@ export default function App() {
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
-  const [view, setView] = useState(() => (['check', 'plans', 'site'].includes(params.get('page')) ? params.get('page') : 'app'))
+  // The homepage is the front door; deep links (?biz=, ?tab=, ?page=) open straight into the app.
+  const [view, setView] = useState(() => (['check', 'plans', 'site', 'scan', 'home'].includes(params.get('page')) ? params.get('page')
+    : params.get('biz') || params.get('tab') ? 'app' : 'home'))
+  const [scanUrl, setScanUrl] = useState('')
+  const [sitePrefill, setSitePrefill] = useState(null)
   const [checkPrefill, setCheckPrefill] = useState(null)
 
   const loadBusinesses = useCallback(async (selectId) => {
@@ -80,6 +86,7 @@ export default function App() {
     }
   }
 
+  const publicView = view === 'home' || view === 'scan'
   const activeIssues = data?.incidents.filter((i) => ['open', 'needs_review'].includes(i.status)).length || 0
   const has = (f) => !!data?.plan.features.includes(f)
   const goPlans = () => { setView('plans'); setAdding(false) }
@@ -88,28 +95,39 @@ export default function App() {
   return (
     <>
       <header className="topbar">
-        <div className="brand">aparece<span>.</span></div>
-        <nav className="pages" aria-label="Pages">
-          <button aria-current={view === 'app'} onClick={() => setView('app')}>{t.dashboard}</button>
-          <button aria-current={view === 'site'} onClick={() => { setView('site'); setAdding(false) }}>{t.websiteCheck}</button>
-          <button aria-current={view === 'check'} onClick={() => { setView('check'); setAdding(false) }}>{t.freeCheck}</button>
-          <button aria-current={view === 'plans'} onClick={goPlans}>{t.plans}</button>
-        </nav>
-        {businesses.length > 0 && (
+        <button className="brand" onClick={() => { setView('home'); window.scrollTo(0, 0) }} aria-label={t.landing.homeLabel}>aparece<span>.</span></button>
+        {publicView ? (
+          <nav className="pages public" aria-label="Pages">
+            <button onClick={() => { setView('home'); setTimeout(() => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>{t.landing.navHow}</button>
+            <button onClick={goPlans}>{t.plans}</button>
+            <button onClick={() => { setView('home'); setTimeout(() => document.getElementById('about')?.scrollIntoView({ behavior: 'smooth' }), 50) }}>{t.landing.navAbout}</button>
+          </nav>
+        ) : (
+          <nav className="pages" aria-label="Pages">
+            <button aria-current={view === 'app'} onClick={() => setView('app')}>{t.dashboard}</button>
+            <button aria-current={view === 'scan'} onClick={() => { setScanUrl(''); setView('scan'); setAdding(false) }}>{t.landing.navScan}</button>
+            <button aria-current={view === 'site'} onClick={() => { setSitePrefill(null); setView('site'); setAdding(false) }}>{t.websiteCheck}</button>
+            <button aria-current={view === 'check'} onClick={() => { setView('check'); setAdding(false) }}>{t.freeCheck}</button>
+            <button aria-current={view === 'plans'} onClick={goPlans}>{t.plans}</button>
+          </nav>
+        )}
+        {!publicView && businesses.length > 0 && (
           <select aria-label="Business" value={bizId ?? ''} onChange={(e) => { setBizId(Number(e.target.value)); setAdding(false) }}>
             {businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         )}
-        {data && !adding && <span className="seg-tag">{t.segment[data.business.segment]}</span>}
-        {data && !adding && <span className={`plan-chip ${plan.id}`}>{t.planName[plan.id]}</span>}
-        <button className="linkish" style={{ color: '#fff' }} onClick={() => { setAdding(true); setView('app') }}>+ {t.addShort}</button>
+        {!publicView && data && !adding && <span className="seg-tag">{t.segment[data.business.segment]}</span>}
+        {!publicView && data && !adding && <span className={`plan-chip ${plan.id}`}>{t.planName[plan.id]}</span>}
+        {!publicView && <button className="linkish" style={{ color: '#fff' }} onClick={() => { setAdding(true); setView('app') }}>+ {t.addShort}</button>}
 
         <div className="spacer" />
-        {data && <span className="mode" title={data.mode === 'demo' ? t.demoMode : t.liveMode}>{data.mode === 'demo' ? t.demoShort : t.liveShort}</span>}
+        {!publicView && data && <span className="mode" title={data.mode === 'demo' ? t.demoMode : t.liveMode}>{data.mode === 'demo' ? t.demoShort : t.liveShort}</span>}
         <div className="lang" role="group" aria-label="Language">
           <button aria-pressed={lang === 'en'} onClick={() => setLang('en')}>EN</button>
           <button aria-pressed={lang === 'es'} onClick={() => setLang('es')}>ES</button>
         </div>
+        {publicView && <button className="linkish signin" onClick={() => setView('app')}>{t.landing.signIn}</button>}
+        {publicView && view === 'home' && <button className="btn marigold" onClick={() => { setScanUrl(''); setView('scan') }}>{t.landing.ctaShort}</button>}
         {bizId && !adding && view === 'app' && (
           <button className="btn marigold" onClick={runScan} disabled={scanning}>
             {scanning ? t.scanning : t.runScan}
@@ -118,8 +136,14 @@ export default function App() {
       </header>
       {error && <div className="banner" role="alert">{error}</div>}
 
-      {view === 'site' ? (
-        <main><SiteCheck t={t}
+      {view === 'home' ? (
+        <Landing t={t} onPlans={goPlans} onScan={(u) => { setScanUrl(u); setView('scan'); window.scrollTo(0, 0) }} />
+      ) : view === 'scan' ? (
+        <main><Scan key={scanUrl} t={t} lang={lang} initialUrl={scanUrl} onPlans={goPlans}
+          onWebsiteReport={(p) => { setSitePrefill(p); setView('site'); window.scrollTo(0, 0) }}
+          onStarted={async (id) => { await loadBusinesses(id); setView('app'); setTab('overview') }} /></main>
+      ) : view === 'site' ? (
+        <main><SiteCheck key={JSON.stringify(sitePrefill)} prefill={sitePrefill} t={t}
           onRunCheck={(p) => { setCheckPrefill({ ...p, category: t.defaultCategory[p.segment] || '' }); setView('check') }}
           onStartTrial={async (p) => {
             try {

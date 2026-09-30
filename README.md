@@ -47,6 +47,19 @@ To reset the demo, stop the backend and delete `backend/aparece.db`.
 One-command option: run `npm run build` in `frontend`, then open http://localhost:8000
 (the backend serves the built app).
 
+## Homepage and one-step scan (just a website)
+
+The app opens on a public **homepage** (`frontend/src/components/Landing.jsx`): who Aparece is, the problem with sourced
+statistics (BrightLocal 2026, SOCi 2026, Adobe 2025), how it works, what owners get, who it's for, pricing ("we grow as
+your business grows"), about us, FAQ. English and Spanish. "Sign in" opens the dashboard; `?biz=`/`?tab=` deep links skip it.
+
+The main call to action is **one box: the business's website**. `POST /api/quick-scan` then:
+1. reads the site and works out the business name, city, type and facts (asks only for name or city if the site doesn't say);
+2. asks the assistants customer questions in EN + ES, including one per service found ("Who offers move-out cleaning in Houston?");
+3. returns one report: how often AI recommends you, **customers you're missing** (and who AI names instead, with how to win
+   each), what AI gets wrong, whether AI can read your site, a 5-step action plan and ready-to-paste bilingual Q&A;
+4. "Start free trial" creates the business with everything already filled in. No CSV or CRM needed.
+
 ## Website check (URL and optional CSV)
 
 "Website check" in the top bar (public, no account) and Fix → Website check (for a customer, also compares their verified

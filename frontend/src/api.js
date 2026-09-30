@@ -42,6 +42,7 @@ export const api = {
   logReferrals: (id, week) => request(`/businesses/${id}/referrals`, { method: 'PUT', body: week }),
   runLab: (id, repeats) => request(`/businesses/${id}/proof-lab`, { method: 'POST', body: { repeats } }),
   lab: (id) => request(`/businesses/${id}/proof-lab`),
+  quickScan: (body) => request('/quick-scan', { method: 'POST', body }),
   siteAudit: (body) => request('/site-audit', { method: 'POST', body }),
   growth: (id) => request(`/businesses/${id}/growth`),
   exportData: (id) => request(`/businesses/${id}/export`),

@@ -5,7 +5,7 @@ import { parseCsv } from './CsvImport.jsx'
 const SEGMENTS = ['cleaning', 'trades', 'services', 'ecommerce', 'tech']
 const copy = (text) => { try { navigator.clipboard.writeText(text) } catch { /* clipboard unavailable */ } }
 
-function Copyable({ label, text, t, code = false }) {
+export function Copyable({ label, text, t, code = false }) {
   const [done, setDone] = useState(false)
   return (
     <div className="copyable">
@@ -18,10 +18,11 @@ function Copyable({ label, text, t, code = false }) {
 }
 
 // Website check: how an AI assistant reads the site, what to improve, and ready-to-paste fixes.
-export default function SiteCheck({ t, business, onRunCheck, onStartTrial }) {
+export default function SiteCheck({ t, business, prefill, onRunCheck, onStartTrial }) {
+  const src = business || prefill
   const [form, setForm] = useState({
-    url: business?.website || '', name: business?.name || '', city: business?.city || '',
-    segment: business?.segment && SEGMENTS.includes(business.segment) ? business.segment : 'cleaning',
+    url: src?.website || '', name: src?.name || '', city: src?.city || '',
+    segment: src?.segment && SEGMENTS.includes(src.segment) ? src.segment : 'cleaning',
   })
   const [items, setItems] = useState([])
   const [fileName, setFileName] = useState('')

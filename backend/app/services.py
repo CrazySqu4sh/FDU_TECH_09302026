@@ -554,7 +554,7 @@ def run_check(req: dict) -> dict:
     by_key = {f["key"]: f for f in facts}
     demo = agents.is_demo()
     out, errors = [], []
-    for j in agents.check_journeys(biz, facts):
+    for j in agents.check_journeys(biz, facts, req.get("services")):
         for p in agents.providers():
             try:
                 if demo:

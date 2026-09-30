@@ -186,6 +186,50 @@ def free_check(body: CheckIn):
     return {"id": cid, **result}
 
 
+CATEGORY = {"cleaning": ("house cleaning service", "servicio de limpieza de casas"), "trades": ("contractor", "contratista"),
+            "services": ("local service business", "negocio de servicios"), "ecommerce": ("online store", "tienda en línea"),
+            "tech": ("tech store", "tienda de tecnología")}
+
+
+class QuickScanIn(BaseModel):
+    url: str = Field(min_length=4, max_length=300)
+    name: str = Field("", max_length=120)
+    city: str = Field("", max_length=120)
+    segment: str = ""
+
+
+@app.post("/api/quick-scan")
+def quick_scan(body: QuickScanIn):
+    """One box, one step: a website address in, a full AI visibility report out. No CSV, no CRM, no account.
+    Reads the site (name, city, type, facts, services), asks the assistants customer questions (one per service
+    found), and saves it as a free check so 'Start free trial' carries everything over."""
+    if not re.match(r"^(https?://)?[a-z0-9.-]+\.[a-z]{2,}(/\S*)?$", body.url.strip(), re.I):
+        raise HTTPException(422, "Enter a website address like brillocleaning.com")
+    seg = body.segment if body.segment in SEGMENTS else ""
+    with get_db() as db:
+        site = site_audit.audit(db, body.url, body.name, body.city, seg)
+    if not site["ok"]:
+        return {"ok": False, "errors": site["errors"], "url": site["url"]}
+    b = site["business"]
+    if not b["name"] or not b["city"]:
+        return {"ok": False, "need": [k for k in ("name", "city") if not b[k]], "business": b, "url": site["url"]}
+    cat, cat_es = CATEGORY.get(b["segment"], CATEGORY["services"])
+    facts = [{"label": f["label"], "label_es": f.get("label_es", ""), "value": f["value"], "category": f["category"],
+              "evidence": "document", "source": f["source"]} for f in site["suggested_facts"]]
+    services_found = [s for s in site["found"]["services"]][:3]
+    req = {"name": b["name"], "category": cat, "category_es": cat_es, "segment": b["segment"], "city": b["city"],
+           "website": site["url"], "competitors": [], "facts": facts, "services": services_found}
+    check = services.run_check(req)
+    with get_db() as db:
+        cid = db.execute("INSERT INTO checks (name, request, result, created_at) VALUES (?,?,?,?)",
+                         (b["name"], json.dumps(req), json.dumps(check), now())).lastrowid
+    # Missed opportunities: customer questions where AI named someone else more often than you.
+    missed = [q for q in check["by_question"] if min(q["en"] or 0, q["es"] or 0) < 50 and q["category"] != "About your business"]
+    offered = {s["label"] for s in services_found}
+    return {"ok": True, "check_id": cid, "business": b, "check": check, "site": site,
+            "missed": [dict(q, offered=q["category"] in offered) for q in missed]}
+
+
 @app.post("/api/check/{cid}/start-trial", status_code=201)
 def start_trial(cid: int):
     """Turns a free check into a business on the free trial, with the facts the owner typed."""
@@ -200,13 +244,15 @@ def start_trial(cid: int):
         bid = db.execute(
             "INSERT INTO businesses (name, category, category_es, segment, city, website, competitors, plan, "
             "plan_started_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (req["name"], req["category"], req["category_es"], req["segment"], req["city"], "",
+            (req["name"], req["category"], req["category_es"], req["segment"], req["city"], req.get("website", ""),
              json.dumps(comps), "trial", now(), now())).lastrowid
         db.execute("UPDATE checks SET business_id=? WHERE id=?", (bid, cid))
         log(db, bid, "trial_started", req["name"], {"check_id": cid})
         if req["facts"]:
-            _upsert_facts(db, bid, [FactIn(**f, key=agents.standard_key(f["category"], f["label"]) or None,
-                                           source="Free AI Check (owner entry)") for f in req["facts"]],
+            _upsert_facts(db, bid, [FactIn(label=f["label"], label_es=f.get("label_es", ""), value=f["value"],
+                                           category=f["category"], evidence=f.get("evidence", "owner"),
+                                           key=agents.standard_key(f["category"], f["label"]) or None,
+                                           source=f.get("source") or "Free AI Check (owner entry)") for f in req["facts"]],
                           "Owner (free check)")
             sales.ensure_history(db, services.load_business(db, bid))
             if agents.is_demo():

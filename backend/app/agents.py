@@ -390,8 +390,8 @@ def standard_key(category: str, label: str) -> str:
             "shipping": "store.shipping", "language": "language.spanish"}.get(category, "")
 
 
-def check_journeys(biz: dict, facts: list[dict]) -> list[dict]:
-    """Free AI Check: four customer questions in English and Spanish, no verified profile needed."""
+def check_journeys(biz: dict, facts: list[dict], services: list[dict] | None = None) -> list[dict]:
+    """Free AI Check: four customer questions in English and Spanish, plus one per service found on the website."""
     cat, cat_es, city, name = biz["category"], biz.get("category_es") or biz["category"], biz["city"], biz["name"]
     keys = [f["key"] for f in facts]
     shop = is_shop(biz)
@@ -405,6 +405,9 @@ def check_journeys(biz: dict, facts: list[dict]) -> list[dict]:
         (f"What do you know about {name}? Is it a good choice?", f"¿Qué sabes de {name}? ¿Es buena opción?",
          "About your business"),
     ]
+    for s in (services or [])[:3]:  # "Who does move-out cleaning in Houston?": the questions that bring jobs
+        pairs.append((f"Who offers {s['label'].lower()} {where}?",
+                      f"¿Quién ofrece {(s.get('label_es') or s['label']).lower()} {where_es}?", s["label"]))
     js = []
     for en, es, category in pairs:
         js.append({"question": en, "language": "en", "category": category, "related_facts": keys})
