@@ -331,7 +331,8 @@ def quick_scan(body: QuickScanIn):
            "website": site["url"], "competitors": [], "facts": facts, "services": services_found,
            "cuisine": None if blocked else site.get("cuisine"),
            "style": None if blocked else site.get("style"), "michelin": False if blocked else site.get("michelin")}
-    check = services.run_check(req)
+    # Without API keys the public scan never invents AI numbers: the owner pastes real answers instead.
+    check = services.pending_check(req) if agents.is_demo() else services.run_check(req)
     check["site_score"] = None if blocked else site["score"]
     with get_db() as db:
         cid = db.execute("INSERT INTO checks (name, request, result, created_at) VALUES (?,?,?,?)",

@@ -577,6 +577,15 @@ def run_check(req: dict) -> dict:
     return res
 
 
+def pending_check(req: dict) -> dict:
+    """No AI keys: don't invent answers. Return the questions to ask, with no AI numbers until they're real."""
+    biz, facts = check_context(req)
+    res = summarize_check([], facts, "pending")
+    res["questions"] = [{"question": j["question"], "language": j["language"], "category": j["category"]}
+                        for j in agents.check_journeys(biz, facts, req.get("services"))]
+    return res
+
+
 def check_context(req: dict) -> tuple[dict, list[dict]]:
     """The business and facts a free check was run with, rebuilt from its saved request."""
     seg = req["segment"]

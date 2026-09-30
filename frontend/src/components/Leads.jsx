@@ -46,7 +46,7 @@ export default function Leads({ t }) {
                     <td><strong>{l.contact_name}</strong><br /><span className="faint">{l.email}{l.phone ? ` · ${l.phone}` : ''}</span></td>
                     <td>{l.business_name}<br /><span className="faint">{l.city}{l.segment ? ` · ${t.segment[l.segment]}` : ''}</span></td>
                     <td><div className="chips small">{l.reasons.map((r) => <span key={r} className="chip">{t.signup.reasons[r]}</span>)}</div></td>
-                    <td>{l.scan ? <>{S.named(l.scan.inclusion)}<br /><span className="faint">{S.lost(l.scan.missed)}{l.scan.mode === 'demo' ? ` · ${t.simulatedTag}` : ''}</span></> : <span className="faint">{S.noScan}</span>}</td>
+                    <td>{l.scan && l.scan.inclusion == null ? <span className="faint">{S.notMeasured}</span> : l.scan ? <>{S.named(l.scan.inclusion)}<br /><span className="faint">{S.lost(l.scan.missed)}{l.scan.mode === 'demo' ? ` · ${t.simulatedTag}` : ''}</span></> : <span className="faint">{S.noScan}</span>}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <select value={l.status} onChange={(e) => setStatus(l, e.target.value)}>{STATUS.map((s) => <option key={s} value={s}>{S.status[s]}</option>)}</select>
                     </td>

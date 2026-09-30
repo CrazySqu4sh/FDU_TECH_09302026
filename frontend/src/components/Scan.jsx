@@ -6,8 +6,8 @@ import { Copyable } from './SiteCheck.jsx'
 const APPS = ['chatgpt', 'gemini', 'perplexity', 'copilot', 'claude']
 
 // Free and real: the owner asks the report's questions in the free AI apps and pastes the answers back.
-function RealAnswers({ S, questions, checkId, onResult }) {
-  const [open, setOpen] = useState(false)
+function RealAnswers({ S, questions, checkId, onResult, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen)
   const [f, setF] = useState({ provider: 'chatgpt', q: 0, text: '' })
   const [list, setList] = useState([])
   const [busy, setBusy] = useState(false)
@@ -165,6 +165,7 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
   )
 
   const c = r.check, b = r.business
+  const pending = c.mode === 'pending'  // no API keys: nothing invented, the owner pastes real answers
   const site = r.blocked ? { score: null, checks: [], fixes: null } : r.site
   const named = c.inclusion ?? 0
   const lost = c.missed
@@ -180,25 +181,26 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
   return (
     <div className="stack">
       {c.mode === 'demo' && <p className="sim-banner" role="note">{S.simBanner}</p>}
+      {pending && <p className="pending-banner" role="note">{S.pendingBanner}</p>}
       {c.mode === 'pasted' && <p className="real-banner" role="note">{S.realBanner(c.answers)}</p>}
       {c.mode !== 'live' && c.questions && (
-        <RealAnswers S={S} questions={c.questions} checkId={r.check_id}
+        <RealAnswers S={S} questions={c.questions} checkId={r.check_id} defaultOpen={pending}
           onResult={(res) => { setR({ ...r, check: res.check, missed: res.missed }); window.scrollTo(0, 0) }} />
       )}
       <section className="hero wide">
         <p className="eyebrow">{S.eyebrow}</p>
-        <h1>{S.headline(b.name, named)}</h1>
-        <p>{S.subline(lost, c.answers, c.languages?.length || 1, Object.keys(c.by_assistant || {}).length, c.mode === 'pasted')}</p>
+        <h1>{pending ? S.pendingHeadline(b.name) : c.mode === 'pasted' && c.answers < 10 ? S.headlineFew(b.name, named, c.answers) : S.headline(b.name, named)}</h1>
+        <p>{pending ? S.pendingSub(c.questions.length) : S.subline(lost, c.answers, c.languages?.length || 1, Object.keys(c.by_assistant || {}).length, c.mode === 'pasted')}</p>
       </section>
 
       <div className="figures">
-        <div className="figure"><b>{named}%</b><span>{S.figNamed}</span></div>
-        <div className="figure"><b>{lost}</b><span>{S.figLost(c.answers)}</span></div>
-        <div className="figure"><b>{wrongFacts.length}</b><span>{S.figWrong}</span></div>
+        <div className="figure"><b>{pending ? '—' : `${named}%`}</b><span>{pending ? S.figPending : S.figNamed}</span></div>
+        <div className="figure"><b>{pending ? '—' : lost}</b><span>{pending ? S.figPendingLost : S.figLost(c.answers)}</span></div>
+        <div className="figure"><b>{pending ? '—' : wrongFacts.length}</b><span>{pending ? S.figPendingWrong : S.figWrong}</span></div>
         <div className="figure"><b>{site.score == null ? '—' : `${site.score}/100`}</b><span>{site.score == null ? S.figSiteBlocked : S.figSite}</span></div>
       </div>
 
-      <section className="panel">
+      {!pending && <section className="panel">
         <div className="panel-head"><h2>{S.missedTitle}</h2><span className="faint">{S.missedHint}</span></div>
         {r.missed.length === 0 ? <p className="success">{S.missedNone}</p> : (
           <div className="missed-list">
@@ -215,11 +217,11 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
           </div>
         )}
         {c.named_instead.length > 0 && <p className="note">{S.instead(c.named_instead.map((x) => x.name).join(', '))}</p>}
-      </section>
+      </section>}
 
-      <PromptList S={S} c={c} city={b.city} />
+      {!pending && <PromptList S={S} c={c} city={b.city} />}
 
-      <div className="two even">
+      {!pending && <div className="two even">
         <section className="panel">
           <div className="panel-head"><h2>{S.wrongTitle}</h2></div>
           {wrongFacts.length === 0 ? <p className="muted">{r.blocked ? S.wrongBlocked : S.wrongNone}</p> : (
@@ -235,7 +237,7 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
           <div className="panel-head"><h2>{S.byAssistant}</h2></div>
           <Bars items={Object.entries(c.by_assistant).map(([k, v]) => ({ label: ASSISTANT_NAMES[k] || k, value: v }))} />
         </section>
-      </div>
+      </div>}
 
       <section className="panel">
         <div className="panel-head"><h2>{S.planTitle}</h2><span className="faint">{S.planHint}</span></div>
