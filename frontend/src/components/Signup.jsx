@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api } from '../api.js'
 
-const SEGMENTS = ['cleaning', 'trades', 'services', 'ecommerce', 'tech']
+const SEGMENTS = ['cleaning', 'restaurant', 'trades', 'services', 'ecommerce', 'tech']
 const REASONS = ['fewer_calls', 'competitors', 'wrong_info', 'curious', 'referred', 'other']
 const ISSUES = ['not_found', 'wrong_info', 'website', 'no_time', 'reviews', 'unsure']
 const ROLES = ['owner', 'manager', 'marketing', 'other']

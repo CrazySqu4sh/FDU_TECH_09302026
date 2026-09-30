@@ -2,13 +2,14 @@ export const CATEGORIES = {
   ecommerce: ['price', 'stock', 'shipping', 'returns', 'service', 'language', 'contact', 'policy'],
   tech: ['price', 'stock', 'spec', 'feature', 'warranty', 'shipping', 'returns', 'language', 'contact', 'policy'],
   services: ['hours', 'price', 'service', 'language', 'contact', 'policy'],
+  restaurant: ['price', 'hours', 'service', 'contact', 'language', 'policy'],
   cleaning: ['price', 'service', 'insurance', 'service_area', 'hours', 'contact', 'language', 'policy'],
   trades: ['license', 'insurance', 'service_area', 'service', 'price', 'hours', 'contact', 'language', 'policy'],
 }
 const EVIDENCE = ['system', 'document', 'owner']
 
 export const blankFact = (segment = 'services') => ({ product: '', product_es: '', label: '', label_es: '', value: '',
-  category: ['services', 'trades', 'cleaning'].includes(segment) ? 'service' : 'price', evidence: 'owner', source: 'Owner entry' })
+  category: ['services', 'trades', 'cleaning', 'restaurant'].includes(segment) ? 'service' : 'price', evidence: 'owner', source: 'Owner entry' })
 
 const HINTS = { hours: '08:00-16:00 or closed', price: '49.99', stock: 'in stock / out of stock', shipping: '3-5', returns: '30 or none', service: 'yes / no', language: 'yes / no', spec: '16 GB', feature: 'yes / no', warranty: '12 (months) or none', license: 'DAL-CR-48213 or none', insurance: 'yes / no', service_area: 'Dallas, Irving, Garland' }
 

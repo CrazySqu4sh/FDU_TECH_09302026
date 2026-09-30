@@ -161,7 +161,7 @@ def display_value(fact: dict, value: str, lang: str = "en") -> str:
 
 
 def is_local(biz: dict) -> bool:
-    return biz.get("segment") in {"services", "trades", "cleaning"}
+    return biz.get("segment") in {"services", "trades", "cleaning", "restaurant"}
 
 
 def is_shop(biz: dict) -> bool:
@@ -345,7 +345,8 @@ def cleaning_journeys(biz: dict, facts: list[dict]) -> list[dict]:
 
 def generate_journeys(biz: dict, facts: list[dict]) -> list[dict]:
     fallback = {"ecommerce": ecommerce_journeys, "tech": tech_journeys,
-                "trades": trades_journeys, "cleaning": cleaning_journeys}.get(biz.get("segment"), template_journeys)
+                "trades": trades_journeys, "cleaning": cleaning_journeys,
+                "restaurant": restaurant_journeys}.get(biz.get("segment"), template_journeys)
     if is_demo():
         return fallback(biz, facts)
     keys = [f["key"] for f in facts]
@@ -377,6 +378,7 @@ DEFAULT_COMPETITORS = {
     "services": ["A national chain", "Top-rated local rival", "Franchise location nearby", "Budget competitor"],
     "ecommerce": ["Big-box marketplace seller", "Top-rated online rival", "Discount online store", "Brand-name retailer"],
     "tech": ["Big-box electronics outlet", "Refurb marketplace seller", "Discount laptop store", "Brand-name retailer"],
+    "restaurant": ["Popular chain restaurant", "Top-rated local spot", "Food truck nearby", "Delivery-app favorite"],
     "cleaning": ["National cleaning franchise", "Top-rated local cleaners", "Gig-app cleaner", "Budget maid service"],
     "trades": ["National home-services franchise", "Top-rated local contractor", "Lead-gen marketplace pro",
                "Budget handyman service"],
@@ -392,10 +394,38 @@ def standard_key(category: str, label: str) -> str:
             "shipping": "store.shipping", "language": "language.spanish"}.get(category, "")
 
 
+def _restaurant_questions(biz: dict, keys: list, features: list | None) -> list[dict]:
+    """What diners actually ask: the food, the city, and the thing they need right now."""
+    city, name = biz["city"], biz["name"]
+    c = biz.get("cuisine") or {"en": "food", "es": "comida"}
+    en, es = c["en"], c["es"]
+    pairs = [
+        (f"Where can I get the best {en} in {city}?", f"¿Cuáles son los mejores lugares de {es} en {city}?", "Best in town"),
+        (f"{en[:1].upper() + en[1:]} open late in {city}", f"Lugares de {es} abiertos de noche en {city}", "Open late"),
+        (f"Good {en} in {city} with vegetarian options", f"Lugares de {es} con opciones vegetarianas en {city}", "Vegetarian options"),
+        (f"Cheap and good {en} in {city} with great reviews", f"Lugares de {es} buenos y baratos en {city}", "Prices and reviews"),
+        (f"{en[:1].upper() + en[1:]} with takeout or delivery in {city}", f"{es[:1].upper() + es[1:]} para llevar o a domicilio en {city}",
+         "Takeout or delivery"),
+        (f"What do you know about {name}? Is it a good choice?", f"¿Qué sabes de {name}? ¿Es buena opción?", "About your business"),
+    ]
+    covered = {"Vegetarian options", "Takeout", "Delivery", "Late night"}
+    for s in [f for f in (features or []) if f["label"] not in covered][:2]:
+        pairs.append((f"{en[:1].upper() + en[1:]} in {city} with {s['label'].lower()}",
+                      f"{es[:1].upper() + es[1:]} en {city} con {(s.get('label_es') or s['label']).lower()}", s["label"]))
+    return [{"question": q, "language": lang, "category": cat, "related_facts": keys}
+            for e, s_, cat in pairs for lang, q in (("en", e), ("es", s_)) if lang in SCAN_LANGUAGES]
+
+
+def restaurant_journeys(biz: dict, facts: list[dict]) -> list[dict]:
+    return _restaurant_questions(biz, [f["key"] for f in facts], [])
+
+
 def check_journeys(biz: dict, facts: list[dict], services: list[dict] | None = None) -> list[dict]:
     """Free AI Check: four customer questions in English and Spanish, plus one per service found on the website."""
     cat, cat_es, city, name = biz["category"], biz.get("category_es") or biz["category"], biz["city"], biz["name"]
     keys = [f["key"] for f in facts]
+    if biz.get("segment") == "restaurant":
+        return _restaurant_questions(biz, keys, services)
     shop = is_shop(biz)
     where, where_es = ("online", "en línea") if shop else (f"in {city}", f"en {city}")
     pairs = [
@@ -466,13 +496,16 @@ def classify_source(domain: str, biz: dict) -> tuple[str, str]:
 DEMO_SOURCES = {
     "trades": ["google.com/maps", "yelp.com", "angi.com", "nextdoor.com", "bbb.org"],
     "cleaning": ["google.com/maps", "yelp.com", "thumbtack.com", "angi.com", "nextdoor.com", "facebook.com"],
+    "restaurant": ["google.com/maps", "yelp.com", "tripadvisor.com", "instagram.com", "doordash.com", "reddit.com"],
     "services": ["google.com/maps", "yelp.com", "facebook.com", "nextdoor.com"],
     "ecommerce": ["etsy.com", "ebay.com", "instagram.com", "reddit.com"],
     "tech": ["ebay.com", "amazon.com", "reddit.com", "backmarket.com"],
 }
-DEMO_STALE = {"cleaning": "yellowpages.com", "trades": "yellowpages.com", "services": "yellowpages.com", "ecommerce": "ebay.com/old-listing",
+DEMO_STALE = {"restaurant": "yellowpages.com", "cleaning": "yellowpages.com", "trades": "yellowpages.com", "services": "yellowpages.com", "ecommerce": "ebay.com/old-listing",
               "tech": "ebay.com/old-listing"}
 DESCRIPTORS = {
+    "restaurant": (["authentic", "great salsa", "fast service", "fair prices", "friendly staff", "late-night spot"],
+                   ["long lines", "small space"]),
     "cleaning": (["reliable", "thorough", "fair prices", "eco-friendly", "Spanish-speaking", "same-week openings"],
                  ["hard to book", "small team"]),
     "trades": (["family-owned", "free estimates", "storm repair", "fair prices", "fast response", "Spanish-speaking"],
@@ -640,6 +673,8 @@ SHOP_FILLER_EN = ["fast shipping and good reviews", "wide selection", "known for
                   "strong reviews for customer service"]
 SHOP_FILLER_ES = ["envíos rápidos y buenas reseñas", "gran variedad", "conocida por su calidad artesanal",
                   "buenas opiniones sobre el servicio"]
+FOOD_FILLER_EN = ["great reviews for the food", "popular late-night spot", "fast and affordable", "locals' favorite"]
+FOOD_FILLER_ES = ["muy buenas reseñas de la comida", "popular en la noche", "rápido y económico", "el favorito de la zona"]
 CLEAN_FILLER_EN = ["great reviews for deep cleans", "flexible scheduling", "eco-friendly products",
                    "background-checked staff"]
 CLEAN_FILLER_ES = ["buenas reseñas por limpiezas profundas", "horarios flexibles", "productos ecológicos",
@@ -711,7 +746,8 @@ def simulate(provider: str, journey: dict, biz: dict, facts: list[dict], competi
         else:
             pool = {"ecommerce": (SHOP_FILLER_EN, SHOP_FILLER_ES), "tech": (TECH_FILLER_EN, TECH_FILLER_ES),
                     "trades": (TRADES_FILLER_EN, TRADES_FILLER_ES),
-                    "cleaning": (CLEAN_FILLER_EN, CLEAN_FILLER_ES)}.get(
+                    "cleaning": (CLEAN_FILLER_EN, CLEAN_FILLER_ES),
+                    "restaurant": (FOOD_FILLER_EN, FOOD_FILLER_ES)}.get(
                 biz.get("segment"), (FILLER_EN, FILLER_ES))[0 if lang == "en" else 1]
             detail = r.choice(pool)
         lines.append(f"{i}. {name}: {detail}.")

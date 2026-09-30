@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api } from '../api.js'
 import { parseCsv } from './CsvImport.jsx'
 
-const SEGMENTS = ['cleaning', 'trades', 'services', 'ecommerce', 'tech']
+const SEGMENTS = ['cleaning', 'restaurant', 'trades', 'services', 'ecommerce', 'tech']
 const copy = (text) => { try { navigator.clipboard.writeText(text) } catch { /* clipboard unavailable */ } }
 
 export function Copyable({ label, text, t, code = false }) {

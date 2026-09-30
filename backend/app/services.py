@@ -545,7 +545,7 @@ def run_check(req: dict) -> dict:
     """Free AI Check: what assistants say about a business before it signs up. Nothing is published."""
     seg = req["segment"]
     biz = {"id": 0, "name": req["name"], "category": req["category"], "category_es": req.get("category_es") or "",
-           "segment": seg, "city": req["city"],
+           "segment": seg, "city": req["city"], "cuisine": req.get("cuisine"),
            "competitors": req.get("competitors") or agents.DEFAULT_COMPETITORS.get(seg, agents.DEFAULT_COMPETITORS["services"])}
     facts = [{"key": agents.standard_key(f["category"], f["label"]) or f"check.{i}", "product": "", "product_es": "", "label": f["label"],
               "label_es": f.get("label_es") or f["label"], "value": f["value"], "category": f["category"],

@@ -15,7 +15,7 @@ from .seed import seed
 EVIDENCE = {"system", "document", "owner"}
 CATEGORIES = {"hours", "price", "service", "language", "contact", "policy", "stock", "shipping", "returns",
               "spec", "feature", "warranty", "license", "insurance", "service_area"}
-SEGMENTS = {"cleaning", "trades", "ecommerce", "tech", "services"}
+SEGMENTS = {"cleaning", "restaurant", "trades", "ecommerce", "tech", "services"}
 
 
 @asynccontextmanager
@@ -186,7 +186,7 @@ def free_check(body: CheckIn):
     return {"id": cid, **result}
 
 
-CATEGORY = {"cleaning": ("house cleaning service", "servicio de limpieza de casas"), "trades": ("contractor", "contratista"),
+CATEGORY = {"cleaning": ("house cleaning service", "servicio de limpieza de casas"), "restaurant": ("restaurant", "restaurante"), "trades": ("contractor", "contratista"),
             "services": ("local service business", "negocio de servicios"), "ecommerce": ("online store", "tienda en línea"),
             "tech": ("tech store", "tienda de tecnología")}
 
@@ -328,7 +328,8 @@ def quick_scan(body: QuickScanIn):
                                 for f in site["suggested_facts"]]
     services_found = [] if blocked else site["found"]["services"][:3]
     req = {"name": b["name"], "category": cat, "category_es": cat_es, "segment": b["segment"], "city": b["city"],
-           "website": site["url"], "competitors": [], "facts": facts, "services": services_found}
+           "website": site["url"], "competitors": [], "facts": facts, "services": services_found,
+           "cuisine": None if blocked else site.get("cuisine")}
     check = services.run_check(req)
     check["site_score"] = None if blocked else site["score"]
     with get_db() as db:

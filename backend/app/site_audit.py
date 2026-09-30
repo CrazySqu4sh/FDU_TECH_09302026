@@ -20,11 +20,22 @@ from .validator import values_match
 
 UA = "Mozilla/5.0 (compatible; AapareceSiteCheck/1.0; checks how AI assistants read this site)"
 MAX_PAGES = 6
+PAGE_PRIORITY = [r"menu|carta", r"servic", r"pric|precio|rate|tarifa", r"location|ubicaci|service-area|areas|zona",
+                 r"about|nosotros", r"faq|pregunta", r"contact", r"catering|order|booking|reserv", r"espa|/es\b"]
+SKIP_PAGES = re.compile(r"terms|privacy|legal|cookie|careers|jobs|accessib|merch|media|press|login|account|cart|"
+                        r"\.(css|js|png|jpe?g|svg|ico|pdf|webp)$", re.I)
 LINK_HINTS = re.compile(r"servic|pric|precio|rate|tarifa|about|nosotros|contact|faq|pregunta|area|zona|espa|/es\b|booking|reserv",
                         re.I)
 SEARCH_BOTS = ["OAI-SearchBot", "ChatGPT-User", "PerplexityBot", "Bingbot", "Googlebot"]
 TRAINING_BOTS = ["GPTBot", "ClaudeBot", "Google-Extended"]
 SERVICE_WORDS = {
+    "restaurant": [("Takeout", "para llevar", r"take-?out|to-?go|carry-?out|para llevar"),
+                   ("Delivery", "a domicilio", r"deliver|doordash|uber ?eats|grubhub|a domicilio"),
+                   ("Catering", "catering", r"catering|banquete"), ("Vegetarian options", "opciones vegetarianas", r"vegetarian|vegan|vegetarian"),
+                   ("Gluten-free options", "opciones sin gluten", r"gluten[\s-]*free|sin gluten"),
+                   ("Breakfast", "desayuno", r"breakfast|desayuno"), ("Late night", "abierto de noche", r"late[\s-]*night|open late|until (1[0-2]|2|3) ?(am|a\.m\.)"),
+                   ("Patio seating", "terraza", r"patio|outdoor seating|terraza"), ("Bar / drinks", "bar", r"margarita|cocktail|\bbar\b|beer|cerveza"),
+                   ("Reservations", "reservaciones", r"reservation|reserv"), ("Kids menu", "menú infantil", r"kids menu|children"),],
     "cleaning": [("Deep cleaning", "limpieza profunda", r"deep\s*clean|limpieza profunda"),
                  ("Move-out cleaning", "limpieza de mudanza", r"move[\s-]*(out|in)|mudanza"),
                  ("Office cleaning", "limpieza de oficinas", r"office|commercial|oficina|comercial"),
@@ -45,7 +56,15 @@ TRUST = [("insured", r"insured|bonded|asegurad|con seguro|fianza"), ("licensed",
 STATES = ("AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|"
           "OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC")
 CITY = re.compile(rf"\b([A-Z][a-zA-Z.]+(?: [A-Z][a-zA-Z.]+){{0,2}}),\s?({STATES})\b")
+CUISINES = [  # (pattern, English, Spanish) — used to ask diners' real questions ("best tacos in Austin")
+    (r"\btacos?\b|taquer", "tacos", "tacos"), (r"\bbirria", "birria", "birria"), (r"\bpupusa", "pupusas", "pupusas"),
+    (r"mexican|mexicana", "Mexican food", "comida mexicana"), (r"\bpizza", "pizza", "pizza"), (r"\bsushi", "sushi", "sushi"),
+    (r"\bburgers?\b", "burgers", "hamburguesas"), (r"\bbbq\b|barbecue", "BBQ", "barbacoa"), (r"\bthai\b", "Thai food", "comida tailandesa"),
+    (r"chinese", "Chinese food", "comida china"), (r"italian", "Italian food", "comida italiana"), (r"seafood|mariscos", "seafood", "mariscos"),
+    (r"bakery|panader", "bakery", "panadería"), (r"coffee|caf[eé]\b", "coffee", "café"),
+]
 SEGMENT_HINTS = {  # guess the business type from the site's own words
+    "restaurant": r"\bmenu\b|restaurant|\btacos?\b|taquer|pizza|burger|sushi|brunch|dine-in|takeout|take-out|comida|catering",
     "cleaning": r"\bclean|maid|janitorial|housekeep|limpieza",
     "trades": r"\broof|remodel|plumb|hvac|contractor|landscap|painting|electrician|handyman|techo",
     "tech": r"\blaptop|refurbish|phone repair|iphone|computer repair",
@@ -104,12 +123,16 @@ def crawl(url: str) -> dict:
         out["robots"] = _get(f"{urllib.parse.urlparse(base).scheme}://{host}/robots.txt")[1]
     except Exception:
         out["robots"] = ""
-    links = []
+    ranked = {}
     for href, text in re.findall(r'<a[^>]+href=["\']([^"\'#]+)["\'][^>]*>(.*?)</a>', home, re.S | re.I):
-        full = urllib.parse.urljoin(base + "/", href)
-        if urllib.parse.urlparse(full).netloc == host and (LINK_HINTS.search(href) or LINK_HINTS.search(text)):
-            links.append(full.split("?")[0].rstrip("/"))
-    for link in list(dict.fromkeys(l for l in links if l != base))[:MAX_PAGES - 1]:
+        full = urllib.parse.urljoin(base + "/", href).split("?")[0].rstrip("/")
+        if urllib.parse.urlparse(full).netloc != host or full == base or SKIP_PAGES.search(full):
+            continue
+        rank = next((i for i, rx in enumerate(PAGE_PRIORITY) if re.search(rx, full + " " + text, re.I)), None)
+        if rank is not None:
+            ranked[full] = min(rank, ranked.get(full, rank))
+    # The pages AI learns the most from come first: menu, services, prices, locations, about, FAQ, contact.
+    for link in sorted(ranked, key=ranked.get)[:MAX_PAGES - 1]:
         try:
             out["pages"].append({"url": link, "html": _get(link)[1]})
         except Exception as e:
@@ -190,6 +213,17 @@ def discover(site: dict, segment: str) -> dict:
     walk(blocks)
     ld = json.dumps(blocks).lower()
     prices = []
+    def ld_walk(o):  # menu items and offers the business publishes for machines
+        if isinstance(o, list):
+            for x in o:
+                ld_walk(x)
+        elif isinstance(o, dict):
+            price = o.get("price") or (o.get("offers") or {}).get("price") if isinstance(o.get("offers"), dict) else o.get("price")
+            if o.get("name") and price and o.get("@type") in ("MenuItem", "Product", "Offer", "Service"):
+                prices.append({"label": str(o["name"])[:60], "value": str(price)})
+            for v in o.values():
+                ld_walk(v)
+    ld_walk(blocks)
     for line in text.splitlines():
         for m in reader.PRICE.finditer(line):
             label = re.sub(r"[:\-–|$].*$", "", line[:m.start()]).strip(" :-–|")[:60] or "Price"
@@ -197,6 +231,12 @@ def discover(site: dict, segment: str) -> dict:
     hours = [line.strip()[:80] for line in text.splitlines()
              if re.search(r"\b(mon|tue|wed|thu|fri|sat|sun|lunes|s[aá]bado|domingo)", line, re.I)
              and (reader.HOURS.search(line) or reader.CLOSED.search(line))][:7]
+    ld_hours = []
+    for spec in re.findall(r'"dayofweek":\s*(\[[^\]]*\]|"[^"]*")[^{}]*?"opens":\s*"([^"]+)"[^{}]*?"closes":\s*"([^"]+)"', ld):
+        days = ", ".join(d.split("/")[-1].title()[:3] for d in re.findall(r'[a-z/.:]+day', spec[0]))
+        ld_hours.append(f"{days} {spec[1]}-{spec[2]}")
+    # Structured hours are exact; text lines are a fallback (and never a question copied from an FAQ).
+    hours = list(dict.fromkeys(ld_hours or [h for h in hours if "?" not in h]))[:7]
     area = re.search(r"(?:serving|service areas?|areas we serve|we serve|zona de servicio|servimos)[:\s]+([^\n.]{3,160})",
                      text, re.I)
     if area and not re.search(r",| and | y |\b(" + STATES + r")\b", area.group(1)):
@@ -218,10 +258,16 @@ def discover(site: dict, segment: str) -> dict:
     city_m = CITY.search(text)
     city = f"{loc.group(1).title()}, {loc.group(2).upper()}" if loc else (f"{city_m.group(1)}, {city_m.group(2)}" if city_m else "")
     scores = {seg: len(re.findall(rx, text, re.I)) for seg, rx in SEGMENT_HINTS.items()}
+    if any(t in ("Restaurant", "FoodEstablishment", "Menu", "CafeOrCoffeeShop", "Bakery") for t in types):
+        scores["restaurant"] = scores.get("restaurant", 0) + 10
+    cuisine = max(CUISINES, key=lambda c: len(re.findall(c[0], text, re.I)))
+    cuisine = cuisine if re.search(cuisine[0], text, re.I) else None
     guess = max(scores, key=scores.get) if max(scores.values()) >= 3 else "services"
     lang_es = bool(re.search(r'hreflang=["\']es|lang=["\']es', " ".join(htmls), re.I)) or len(ES_WORDS.findall(text)) >= 6
     return {
         "name": name[:80], "city": city, "segment_guess": guess,
+        "cuisine": {"en": cuisine[1], "es": cuisine[2]} if cuisine else None,
+        "has_menu": any("/menu" in u for u in (p["url"] for p in site["pages"])) or "menu" in ld,
         "text": text, "pages_read": [p["url"] for p in site["pages"]],
         "title": re.sub(r"\s+", " ", title.group(1)).strip() if title else "",
         "description": _meta(home, "description") or _meta(home, "og:description"),
@@ -239,7 +285,7 @@ def discover(site: dict, segment: str) -> dict:
 
 # ------------------------------------------------------------ scoring
 
-def checks(d: dict, site: dict, name: str, city: str) -> list[dict]:
+def checks(d: dict, site: dict, name: str, city: str, segment: str = "") -> list[dict]:
     blocked = [b for b in SEARCH_BOTS if robots_blocked(site["robots"], b)]
     local = any(t for t in d["jsonld_types"] if t in {"LocalBusiness", "HomeAndConstructionBusiness", "ProfessionalService",
                                                         "HousePainter", "Plumber", "Organization", "Store", "Restaurant"})
@@ -253,6 +299,7 @@ def checks(d: dict, site: dict, name: str, city: str) -> list[dict]:
         ("prices", 10, bool(d["prices"]), {"found": d["prices"][:4]}),
         ("services", 10, len(d["services"]) >= 3, {"found": [s["label"] for s in d["services"]]}),
         ("area", 8, bool(d["area"]), {"found": d["area"]}),
+        ("menu", 8, d["has_menu"] and bool(d["prices"]), {"found": len(d["prices"])}) if segment == "restaurant" else
         ("trust", 8, "insured" in d["trust"] or "licensed" in d["trust"], {"found": d["trust"]}),
         ("spanish", 8, d["spanish"], {}),
         ("faq", 6, d["faq"], {}),
@@ -302,6 +349,23 @@ def fixes(d: dict, name: str, city: str, url: str, segment: str, items: list | N
               f"¿Qué servicios ofrecen? {', '.join(services[:5]) or '[tus servicios]'}.",
               f"¿Tienen seguro? {'Sí, estamos asegurados.' if insured else '[Sí/No: agrega los datos de tu seguro]'}",
               f"¿Cómo reservo? Llama al {phone}. We speak English too."]
+    if segment == "restaurant":  # diners ask different things than service customers
+        ld["@type"] = "Restaurant"
+        feats = {s.lower() for s in services}
+        hrs = "; ".join(hours[:3]) if hours else "[your hours, every day]"
+        yes = lambda k: any(k in f for f in feats)  # noqa: E731
+        faq_en = [f"Where are you located? {area}.",
+                  f"What are your hours? {hrs}.",
+                  f"How much is {pl}? ${price['value']}.",
+                  f"Do you offer takeout or delivery? {'Yes.' if yes('takeout') or yes('delivery') else '[Yes/No]'}",
+                  f"Do you have vegetarian options? {'Yes.' if yes('vegetarian') else '[Yes/No]'}",
+                  f"How do I order? Call {phone}. Se habla español."]
+        faq_es = [f"¿Dónde están? {area}.",
+                  f"¿Cuál es su horario? {hrs}.",
+                  f"¿Cuánto cuesta {(price.get('label_es') or price['label']).lower()}? ${price['value']}.",
+                  f"¿Tienen para llevar o a domicilio? {'Sí.' if yes('takeout') or yes('delivery') else '[Sí/No]'}",
+                  f"¿Tienen opciones vegetarianas? {'Sí.' if yes('vegetarian') else '[Sí/No]'}",
+                  f"¿Cómo ordeno? Llama al {phone}. We speak English too."]
     main = services[0] if services else "[Main service]"
     return {"jsonld": ld, "faq_en": faq_en, "faq_es": faq_es,
             "title": f"{name or '[Business name]'} | {main} in {city.split(',')[0] if city else '[City]'}",
@@ -356,9 +420,10 @@ def audit(db, url: str, name: str = "", city: str = "", segment: str = "cleaning
         segment = d["segment_guess"]
         d = discover(site, segment)
     name, city = name or d["name"], city or d["city"]
-    cs = checks(d, site, name, city)
+    cs = checks(d, site, name, city, segment)
     score = sum(c["weight"] for c in cs if c["pass"])
-    res = {"ok": True, "url": site["url"], "business": {"name": name, "city": city, "segment": segment}, "found_name": d["name"], "simulated": bool(site.get("simulated")), "errors": site["errors"],
+    res = {"ok": True, "url": site["url"], "business": {"name": name, "city": city, "segment": segment}, "found_name": d["name"],
+           "cuisine": d["cuisine"], "simulated": bool(site.get("simulated")), "errors": site["errors"],
            "pages_read": d["pages_read"], "score": score, "checks": cs,
            "found": {k: d[k] for k in ("title", "description", "phones", "prices", "hours", "area", "services", "trust",
                                        "spanish", "faq", "jsonld_types")},

@@ -3,7 +3,8 @@ import { api, ASSISTANT_NAMES } from '../api.js'
 import { Bars } from './Overview.jsx'
 import { Copyable } from './SiteCheck.jsx'
 
-const WIN = { 'Best in category': 'best', 'Prices and reviews': 'prices', 'Open on weekends': 'hours' }
+const WIN = { 'Best in category': 'best', 'Best in town': 'best', 'Prices and reviews': 'prices', 'Open on weekends': 'hours',
+  'Open late': 'hours', 'Takeout or delivery': 'delivery', 'Vegetarian options': 'menu' }
 
 // One box → one report: what AI says, the customers you're missing, what it gets wrong, and what to do.
 export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, onWebsiteReport }) {
@@ -54,7 +55,7 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
             {why?.blocked && (
               <label className="field">{t.type}
                 <select value={extra.segment} onChange={(e) => setExtra({ ...extra, segment: e.target.value })}>
-                  {['cleaning', 'trades', 'services', 'ecommerce', 'tech'].map((s) => <option key={s} value={s}>{t.segment[s]}</option>)}
+                  {['cleaning', 'restaurant', 'trades', 'services', 'ecommerce', 'tech'].map((s) => <option key={s} value={s}>{t.segment[s]}</option>)}
                 </select>
               </label>
             )}

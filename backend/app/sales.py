@@ -25,6 +25,7 @@ PROFILES = {
     "ecommerce": {"search": 1400, "ai": 90, "conv": 0.05, "aov": 96},
     "tech": {"search": 2600, "ai": 190, "conv": 0.04, "aov": 365},
     "services": {"search": 520, "ai": 30, "conv": 0.09, "aov": 180},
+    "restaurant": {"search": 900, "ai": 60, "conv": 0.12, "aov": 32},  # a visit or order; average ticket
     "cleaning": {"search": 520, "ai": 40, "conv": 0.08, "aov": 180},  # a booking; average clean
     "trades": {"search": 640, "ai": 18, "conv": 0.06, "aov": 2400},  # a lead becomes a job; average job value
 }
