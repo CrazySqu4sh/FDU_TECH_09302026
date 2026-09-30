@@ -3,6 +3,62 @@ import { api, ASSISTANT_NAMES } from '../api.js'
 import { Bars } from './Overview.jsx'
 import { Copyable } from './SiteCheck.jsx'
 
+const APPS = ['chatgpt', 'gemini', 'perplexity', 'copilot', 'claude']
+
+// Free and real: the owner asks the report's questions in the free AI apps and pastes the answers back.
+function RealAnswers({ S, questions, checkId, onResult }) {
+  const [open, setOpen] = useState(false)
+  const [f, setF] = useState({ provider: 'chatgpt', q: 0, text: '' })
+  const [list, setList] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [copied, setCopied] = useState(null)
+  const q = questions[f.q]
+  function add() {
+    if (f.text.trim().length < 10) { setErr(S.realNeed); return }
+    setList([...list, { provider: f.provider, language: q.language, question: q.question, text: f.text.trim() }])
+    setF({ ...f, text: '', q: Math.min(f.q + 1, questions.length - 1) }); setErr('')
+  }
+  async function submit() {
+    setBusy(true)
+    try { onResult(await api.checkAnswers(checkId, list)); setList([]); setOpen(false) } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+  return (
+    <section className="panel real-answers">
+      <div className="panel-head">
+        <div><h2>{S.realTitle}</h2><p className="muted" style={{ maxWidth: '70ch', marginTop: '0.3rem' }}>{S.realHint}</p></div>
+        <button className="btn small" onClick={() => setOpen(!open)}>{open ? S.hide : S.realOpen}</button>
+      </div>
+      {open && (
+        <div className="stack" style={{ gap: '0.9rem' }}>
+          <ol className="real-steps">{S.realSteps.map((x) => <li key={x}>{x}</li>)}</ol>
+          <div className="q-list">
+            {questions.map((x, i) => (
+              <button key={x.question} className={`q-chip ${f.q === i ? 'on' : ''}`} onClick={() => setF({ ...f, q: i })}>
+                <span className="lang-tag">{x.language.toUpperCase()}</span>{x.question}
+              </button>
+            ))}
+          </div>
+          <div className="copy-q">
+            <strong>“{q.question}”</strong>
+            <button className="linkish" onClick={() => { try { navigator.clipboard.writeText(q.question) } catch { /* no clipboard */ } setCopied(f.q) }}>{copied === f.q ? S.copied : S.copyQ}</button>
+          </div>
+          <div className="form-grid">
+            <label className="field">{S.realApp}<select value={f.provider} onChange={(e) => setF({ ...f, provider: e.target.value })}>{APPS.map((a) => <option key={a} value={a}>{ASSISTANT_NAMES[a]}</option>)}</select></label>
+          </div>
+          <label className="field">{S.realPaste}<textarea rows={6} value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} placeholder={S.realPh} /></label>
+          <div className="confirm-bar" style={{ marginTop: 0 }}>
+            <button className="btn ghost" onClick={add}>{S.realAdd}</button>
+            {list.length > 0 && <button className="btn" onClick={submit} disabled={busy}>{busy ? S.realChecking : S.realSubmit(list.length)}</button>}
+            {err && <p className="error">{err}</p>}
+          </div>
+          {list.length > 0 && <ul className="journey-list">{list.map((a, i) => <li key={i}>{ASSISTANT_NAMES[a.provider]}: {a.question}</li>)}</ul>}
+        </div>
+      )}
+    </section>
+  )
+}
+
 const WIN = { 'Best in category': 'best', 'Best in town': 'best', 'Prices and reviews': 'prices', 'Open on weekends': 'hours',
   'Open late': 'hours', 'Takeout or delivery': 'delivery', 'Vegetarian options': 'menu' }
 
@@ -85,10 +141,15 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
   return (
     <div className="stack">
       {c.mode === 'demo' && <p className="sim-banner" role="note">{S.simBanner}</p>}
+      {c.mode === 'pasted' && <p className="real-banner" role="note">{S.realBanner(c.answers)}</p>}
+      {c.mode !== 'live' && c.questions && (
+        <RealAnswers S={S} questions={c.questions} checkId={r.check_id}
+          onResult={(res) => { setR({ ...r, check: res.check, missed: res.missed }); window.scrollTo(0, 0) }} />
+      )}
       <section className="hero wide">
         <p className="eyebrow">{S.eyebrow}</p>
         <h1>{S.headline(b.name, named)}</h1>
-        <p>{S.subline(lost, c.answers, c.languages?.length || 1)}</p>
+        <p>{S.subline(lost, c.answers, c.languages?.length || 1, Object.keys(c.by_assistant || {}).length, c.mode === 'pasted')}</p>
       </section>
 
       <div className="figures">

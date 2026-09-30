@@ -1,6 +1,6 @@
 """The AI agents. Each has one narrow job.
 
-Live mode calls real assistants (Claude, ChatGPT) when API keys are set.
+Live mode calls real assistants (ChatGPT, Claude, Gemini, Perplexity) for whichever API keys are set.
 Demo mode simulates assistant answers so the full workflow runs with no keys.
 Set DEMO_MODE=true|false|auto (auto = demo only when no keys are present).
 """
@@ -30,6 +30,10 @@ _load_dotenv()
 
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+PERPLEXITY_KEY = os.getenv("PERPLEXITY_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar")
 DEMO_MODE = os.getenv("DEMO_MODE", "auto").lower()
 
 CLAUDE_ASSISTANT_MODEL = os.getenv("CLAUDE_ASSISTANT_MODEL", "claude-sonnet-5-5")
@@ -51,6 +55,10 @@ def live_providers() -> list[str]:
         out.append("chatgpt")
     if ANTHROPIC_KEY:
         out.append("claude")
+    if GEMINI_KEY:
+        out.append("gemini")
+    if PERPLEXITY_KEY:
+        out.append("perplexity")
     return out
 
 
@@ -115,22 +123,77 @@ def _openai(prompt: str, web: bool = False) -> str:
     return client.responses.create(**kwargs).output_text
 
 
+def _post_json(url: str, body: dict, headers: dict, timeout: int = 60) -> dict:
+    import urllib.request
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", **headers})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def parse_gemini(data: dict) -> tuple[str, list[dict]]:
+    """Answer text + the web pages Google Search grounded it on (groundingMetadata.groundingChunks)."""
+    cand = (data.get("candidates") or [{}])[0]
+    text = "".join(p.get("text", "") for p in (cand.get("content") or {}).get("parts", []))
+    sources = []
+    for ch in (cand.get("groundingMetadata") or {}).get("groundingChunks", []):
+        web = ch.get("web") or {}
+        if web.get("uri"):
+            # Gemini returns a redirect link; the title carries the real site's domain.
+            title = web.get("title") or ""
+            url = web["uri"] if "grounding-api-redirect" not in web["uri"] or "." not in title else f"https://{title}"
+            sources.append({"url": url, "title": title})
+    return text, sources
+
+
+def _gemini(prompt: str, search: bool = True) -> tuple[str, list[dict]]:
+    body = {"contents": [{"parts": [{"text": prompt}]}]}
+    if search:
+        body["tools"] = [{"google_search": {}}]
+    data = _post_json(f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+                      body, {"x-goog-api-key": GEMINI_KEY})
+    return parse_gemini(data)
+
+
+def parse_perplexity(data: dict) -> tuple[str, list[dict]]:
+    """Answer text + sources from search_results (current) or citations (older responses)."""
+    text = ((data.get("choices") or [{}])[0].get("message") or {}).get("content", "")
+    sources = [{"url": s["url"], "title": s.get("title", "")} for s in data.get("search_results") or [] if s.get("url")]
+    if not sources:
+        sources = [{"url": u, "title": ""} for u in data.get("citations") or [] if isinstance(u, str)]
+    return text, sources
+
+
+def _perplexity(prompt: str) -> tuple[str, list[dict]]:
+    data = _post_json("https://api.perplexity.ai/chat/completions",
+                      {"model": PERPLEXITY_MODEL, "messages": [{"role": "user", "content": prompt}]},
+                      {"Authorization": f"Bearer {PERPLEXITY_KEY}"})
+    return parse_perplexity(data)
+
+
 def _utility(prompt: str) -> str:
     """Cheap model for extraction and drafting."""
     if ANTHROPIC_KEY:
         return _claude(prompt, CLAUDE_UTILITY_MODEL)
-    return _openai(prompt)
+    if OPENAI_KEY:
+        return _openai(prompt)
+    if GEMINI_KEY:
+        return _gemini(prompt, search=False)[0]
+    raise RuntimeError("No key for reading answers")
 
 
 def model_for(provider: str) -> str:
-    return {"claude": CLAUDE_ASSISTANT_MODEL, "chatgpt": OPENAI_MODEL}.get(provider, provider)
+    return {"claude": CLAUDE_ASSISTANT_MODEL, "chatgpt": OPENAI_MODEL, "gemini": GEMINI_MODEL,
+            "perplexity": PERPLEXITY_MODEL}.get(provider, provider)
 
 
 def chat(prompt: str) -> str:
     """The owner-facing assistant uses the stronger model; no web access, it answers from supplied data."""
     if ANTHROPIC_KEY:
         return _claude(prompt, CLAUDE_ASSISTANT_MODEL, max_tokens=600)
-    return _openai(prompt)
+    if OPENAI_KEY:
+        return _openai(prompt)
+    return _gemini(prompt, search=False)[0]
 
 
 def parse_json(text: str):
@@ -476,6 +539,10 @@ def ask_assistant(provider: str, question: str, city: str) -> tuple[str, list[di
         return _claude_web(prompt, CLAUDE_ASSISTANT_MODEL)
     if provider == "chatgpt":
         return _openai_web(prompt)
+    if provider == "gemini":
+        return _gemini(prompt)
+    if provider == "perplexity":
+        return _perplexity(prompt)
     raise ValueError(f"Unsupported provider {provider}")
 
 
@@ -579,10 +646,9 @@ Answer:
                 "competitors": data.get("competitors", []), "claims": data.get("claims", []),
                 "description": data.get("description") or "", "descriptors": data.get("descriptors") or [],
                 "sentiment": data.get("sentiment") or "neutral"}
-    except Exception:
-        mentioned = biz["name"].lower() in answer.lower()
-        return {"mentioned": mentioned, "position": None,
-                "competitors": [c for c in competitors if c.lower() in answer.lower()], "claims": []}
+    except Exception:  # no model available to read it: read it with code instead of guessing
+        from .reader import read_answer
+        return read_answer(answer, biz, facts, competitors)
 
 
 # ------------------------------------------------------ Demo simulator

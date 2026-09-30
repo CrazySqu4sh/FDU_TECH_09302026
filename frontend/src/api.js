@@ -45,6 +45,7 @@ export const api = {
   createLead: (body) => request('/leads', { method: 'POST', body }),
   leads: () => request('/leads'),
   updateLead: (id, status, note) => request(`/leads/${id}`, { method: 'PUT', body: { status, note } }),
+  checkAnswers: (cid, answers) => request(`/check/${cid}/answers`, { method: 'POST', body: { answers } }),
   quickScan: (body) => request('/quick-scan', { method: 'POST', body }),
   siteAudit: (body) => request('/site-audit', { method: 'POST', body }),
   growth: (id) => request(`/businesses/${id}/growth`),

@@ -152,6 +152,20 @@ def business_segment(text: str, name: str) -> tuple[bool, int | None, str]:
     return (probe in fold(text), None, text) if probe else (False, None, "")
 
 
+def list_names(text: str) -> list[str]:
+    """Business names from a numbered or bulleted list ("1. **Name** – why"), the way assistants answer."""
+    names = []
+    for line in text.splitlines():
+        m = re.match(r"\s*(?:\d+[.)]|[-*•])\s+(.+)", line)
+        if not m:
+            continue
+        item = re.sub(r"[*_#`]", "", m.group(1)).strip()
+        name = re.split(r"\s[–—-]\s|:\s|\s\(|,\s", item)[0].strip(" .")
+        if 2 < len(name) <= 60 and not name.lower().startswith(("http", "www")):
+            names.append(name)
+    return list(dict.fromkeys(names))
+
+
 def read_answer(text: str, biz: dict, facts: list[dict], competitors: list[str]) -> dict:
     """Code-only extraction for pasted answers (the $0 path). Positive claims only; no guessing."""
     mentioned, position, seg = business_segment(text, biz["name"])
@@ -164,6 +178,8 @@ def read_answer(text: str, biz: dict, facts: list[dict], competitors: list[str])
             if c:
                 claims.append({"fact_key": f["key"], "value": c[0][0]})
     comps = [c for c in competitors if fold(c) in fold(text)]
+    own = " ".join(re.findall(r"[a-z0-9]+", fold(biz["name"]))[:2])
+    comps += [n for n in list_names(text) if own and own not in fold(n) and n not in comps]  # real answers name real rivals
     urls = re.findall(r"https?://[^\s)\]>\"']+", text)
     return {"mentioned": mentioned, "position": position, "competitors": comps, "claims": claims,
             "description": "", "descriptors": [], "sentiment": "neutral",

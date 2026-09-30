@@ -344,6 +344,33 @@ def quick_scan(body: QuickScanIn):
             "missed": [dict(q, offered=q["category"] in offered) for q in missed]}
 
 
+class CheckAnswer(BaseModel):
+    provider: str = Field(max_length=20)
+    language: str = "en"
+    question: str = Field(min_length=3, max_length=300)
+    text: str = Field(min_length=10, max_length=8000)
+
+
+class CheckAnswers(BaseModel):
+    answers: list[CheckAnswer] = Field(min_length=1, max_length=80)
+
+
+@app.post("/api/check/{cid}/answers")
+def check_pasted_answers(cid: int, body: CheckAnswers):
+    """Replace a free report's simulated answers with real ones pasted from the free AI apps. $0 and real."""
+    with get_db() as db:
+        chk = row(db.execute("SELECT * FROM checks WHERE id=?", (cid,)))
+        if not chk:
+            raise HTTPException(404, "Check not found")
+        req = json.loads(chk["request"])
+        res = services.check_from_pasted(req, [a.model_dump() for a in body.answers])
+        res["site_score"] = json.loads(chk["result"]).get("site_score")
+        db.execute("UPDATE checks SET result=? WHERE id=?", (json.dumps(res), cid))  # leads now show the real numbers
+        offered = {s["label"] for s in req.get("services") or []}
+        missed = [q for q in res["by_question"] if (q["rate"] or 0) < 50 and q["category"] != "About your business"]
+        return {"check": res, "missed": [dict(q, offered=q["category"] in offered) for q in missed]}
+
+
 @app.post("/api/check/{cid}/start-trial", status_code=201)
 def start_trial(cid: int):
     """Turns a free check into a business on the free trial, with the facts the owner typed."""

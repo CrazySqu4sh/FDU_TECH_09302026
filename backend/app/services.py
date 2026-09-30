@@ -554,7 +554,8 @@ def run_check(req: dict) -> dict:
     by_key = {f["key"]: f for f in facts}
     demo = agents.is_demo()
     out, errors = [], []
-    for j in agents.check_journeys(biz, facts, req.get("services")):
+    journeys = agents.check_journeys(biz, facts, req.get("services"))
+    for j in journeys:
         for p in agents.providers():
             try:
                 if demo:
@@ -569,6 +570,47 @@ def run_check(req: dict) -> dict:
                         "category": j["category"], "text": text, "mentioned": bool(ext["mentioned"]),
                         "competitors": ext.get("competitors", []), "claims": ext.get("claims", [])})
 
+    res = summarize_check(out, facts, "demo" if demo else "live")
+    res["errors"] = errors
+    res["questions"] = [{"question": j["question"], "language": j["language"], "category": j["category"]} for j in journeys]
+    return res
+
+
+def check_context(req: dict) -> tuple[dict, list[dict]]:
+    """The business and facts a free check was run with, rebuilt from its saved request."""
+    seg = req["segment"]
+    biz = {"id": 0, "name": req["name"], "category": req["category"], "category_es": req.get("category_es") or "",
+           "segment": seg, "city": req["city"], "cuisine": req.get("cuisine"), "competitors": req.get("competitors") or []}
+    facts = [{"key": agents.standard_key(f["category"], f["label"]) or f"check.{i}", "product": "", "product_es": "",
+              "label": f["label"], "label_es": f.get("label_es") or f["label"], "value": f["value"],
+              "category": f["category"], "evidence": "owner", "verified_at": datetime.now(timezone.utc).isoformat()}
+             for i, f in enumerate(req.get("facts") or [])]
+    return biz, facts
+
+
+def check_from_pasted(req: dict, answers: list[dict]) -> dict:
+    """Real answers copied from the free AI apps, read with code (or the extractor when keys are set)."""
+    biz, facts = check_context(req)
+    out = []
+    for a in answers:
+        ext = reader.read_answer(a["text"], biz, facts, [])
+        if not agents.is_demo():
+            try:
+                ext = {**agents.extract(a["text"], biz, facts, []), "sources": ext["sources"]}
+            except Exception:
+                pass
+        cat = next((q["category"] for q in agents.check_journeys(biz, facts, req.get("services"))
+                    if q["question"] == a["question"]), a.get("category") or "Pasted question")
+        out.append({"provider": a["provider"], "question": a["question"], "language": a["language"], "category": cat,
+                    "text": a["text"], "mentioned": bool(ext["mentioned"]), "competitors": ext.get("competitors", []),
+                    "claims": ext.get("claims", [])})
+    res = summarize_check(out, facts, "pasted")
+    res["questions"] = [{"question": j["question"], "language": j["language"], "category": j["category"]}
+                        for j in agents.check_journeys(biz, facts, req.get("services"))]
+    return res
+
+
+def summarize_check(out: list[dict], facts: list[dict], mode: str) -> dict:
     def rate(rs):
         return round(100 * sum(r["mentioned"] for r in rs) / len(rs)) if rs else None
 
@@ -589,7 +631,7 @@ def run_check(req: dict) -> dict:
     instead = Counter(c for r in out if not r["mentioned"] for c in r["competitors"]).most_common(3)
     unnamed = [r for r in out if not r["mentioned"] and r["competitors"]]
     return {
-        "mode": "demo" if demo else "live", "errors": errors, "answers": len(out),
+        "mode": mode, "errors": [], "answers": len(out),
         "inclusion": rate(out), "inclusion_en": rate([r for r in out if r["language"] == "en"]),
         "inclusion_es": rate([r for r in out if r["language"] == "es"]),
         "by_assistant": {p: rate([r for r in out if r["provider"] == p]) for p in dict.fromkeys(r["provider"] for r in out)},

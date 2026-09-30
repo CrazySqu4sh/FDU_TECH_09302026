@@ -570,3 +570,12 @@ table.edit td { padding: 0.3rem 0.4rem; }
 .lead-detail td { background: var(--paper); } .lead-detail p { margin-bottom: 0.4rem; }
 .leads-table select { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.3rem 0.4rem; }
 .sim-banner { background: var(--review-wash); color: var(--review); border: 1px solid #955f0055; border-radius: var(--radius); padding: 0.7rem 1rem; font-weight: 600; }
+
+/* Real answers in the free report */
+.real-banner { background: var(--match-wash); color: var(--match); border: 1px solid #1f7a4d55; border-radius: var(--radius); padding: 0.7rem 1rem; font-weight: 600; }
+.real-answers { border-color: var(--match); }
+.real-steps { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.3rem; color: var(--ink-soft); }
+.q-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.q-chip { background: var(--paper); border: 1px solid var(--line); border-radius: 99px; padding: 0.3rem 0.75rem; font-size: 0.85rem; cursor: pointer; text-align: left; }
+.q-chip.on { border-color: var(--ink); background: var(--surface); box-shadow: inset 0 0 0 1px var(--ink); }
+.copy-q { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; background: var(--paper); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; }

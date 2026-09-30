@@ -244,7 +244,12 @@ turns the check into a business on the trial.
 Copy `backend/.env.example` to `backend/.env`, add `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`, and restart the
 backend (it reads `backend/.env` automatically; `.env` is git-ignored, never commit it). With keys present,
 scans ask Claude and ChatGPT for real (with web search) and a cheap model extracts claims.
-Gemini and Perplexity appear only in demo mode until you add their clients in `agents.py`.
+Each key turns on that assistant: `OPENAI_API_KEY` (ChatGPT), `ANTHROPIC_API_KEY` (Claude), `GEMINI_API_KEY` (Gemini with
+Google Search grounding) and `PERPLEXITY_API_KEY` (Perplexity sonar). Every assistant's cited pages are saved.
+
+**Free real results:** in the public report, "Paste real answers" lists the report's questions; ask them in the free
+ChatGPT / Gemini / Perplexity / Copilot apps and paste the answers. `POST /api/check/{id}/answers` reads them with code
+(rival names come from the answer's own list) and the report switches from simulated to real.
 Check each provider's current model names and web-search tool names in their docs.
 
 ## How it maps to the proposal
