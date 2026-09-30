@@ -76,7 +76,7 @@ function PromptList({ S, c, city }) {
               <span className="lang-tag">{p.language.toUpperCase()}</span>
               <span className="prompt-q">“{p.question}”</span>
               <span className="prompt-who">
-                {p.answers.map((a) => <span key={a.provider} className={`who ${a.mentioned ? 'yes' : 'no'}`} title={a.mentioned ? S.namedYouBy : S.notNamedBy}>{ASSISTANT_NAMES[a.provider] || a.provider}</span>)}
+                {p.answers.map((a) => <span key={a.provider} className={`who ${a.mentioned ? 'yes' : 'no'}`} title={a.mentioned ? S.namedYouBy : S.notNamedBy}>{ASSISTANT_NAMES[a.provider] || a.provider}{a.mentioned && a.position ? ` #${a.position}` : ''}</span>)}
               </span>
               <b className={p.rate >= 50 ? 'up' : 'down'}>{p.rate}%</b>
             </button>
@@ -84,7 +84,7 @@ function PromptList({ S, c, city }) {
               <div className="prompt-answers">
                 {p.answers.map((a) => (
                   <div key={a.provider}>
-                    <p className="faint"><strong>{ASSISTANT_NAMES[a.provider] || a.provider}</strong> · {a.mentioned ? S.namedYouBy : S.notNamedBy}</p>
+                    <p className="faint"><strong>{ASSISTANT_NAMES[a.provider] || a.provider}</strong> · {a.mentioned ? (a.position ? S.rankedAt(a.position) : S.namedYouBy) : S.notNamedBy}</p>
                     <pre>{a.text}</pre>
                   </div>
                 ))}

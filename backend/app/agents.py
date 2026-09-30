@@ -479,8 +479,10 @@ def _restaurant_questions(biz: dict, keys: list, features: list | None) -> list[
     city, name = biz["city"], biz["name"]
     c = biz.get("cuisine") or {"en": "food", "es": "comida"}
     en, es = c["en"], c["es"]
+    # The question everyone asks first, for every restaurant.
+    general = (f"What are the best restaurants in {city}?", f"¿Cuáles son los mejores restaurantes en {city}?", "Best restaurants")
     if biz.get("style") == "fine_dining":  # nobody asks for a $200 tasting menu that's "cheap" or "delivered"
-        pairs = [
+        pairs = [general,
             (f"What are the best fine dining restaurants in {city}?", f"¿Cuáles son los mejores restaurantes de alta cocina en {city}?",
              "Best in town"),
             (f"Best tasting menu in {city}", f"Mejor menú de degustación en {city}", "Tasting menu"),
@@ -495,10 +497,11 @@ def _restaurant_questions(biz: dict, keys: list, features: list | None) -> list[
             (f"What do you know about {name}? Is it a good choice?", f"¿Qué sabes de {name}? ¿Es buena opción?", "About your business"),
         ]
         if biz.get("cuisine"):
-            pairs.insert(1, (f"Best {en} restaurant in {city}", f"Mejor restaurante de {es} en {city}", f"Best {en}"))
+            pairs.insert(2, (f"Best {en} restaurant in {city}", f"Mejor restaurante de {es} en {city}", f"Best {en}"))
         return [{"question": q, "language": lang, "category": cat, "related_facts": keys}
                 for e, s_, cat in pairs for lang, q in (("en", e), ("es", s_)) if lang in SCAN_LANGUAGES]
     pairs = [
+        general,
         (f"Where can I get the best {en} in {city}?", f"¿Cuáles son los mejores lugares de {es} en {city}?", "Best in town"),
         (f"{en[:1].upper() + en[1:]} open late in {city}", f"Lugares de {es} abiertos de noche en {city}", "Open late"),
         (f"Good {en} in {city} with vegetarian options", f"Lugares de {es} con opciones vegetarianas en {city}", "Vegetarian options"),

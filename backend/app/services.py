@@ -568,6 +568,7 @@ def run_check(req: dict) -> dict:
                 continue
             out.append({"provider": p, "question": j["question"], "language": j["language"],
                         "category": j["category"], "text": text, "mentioned": bool(ext["mentioned"]),
+                        "position": ext.get("position"),
                         "competitors": ext.get("competitors", []), "claims": ext.get("claims", [])})
 
     res = summarize_check(out, facts, "demo" if demo else "live")
@@ -603,7 +604,8 @@ def check_from_pasted(req: dict, answers: list[dict]) -> dict:
         cat = next((q["category"] for q in agents.check_journeys(biz, facts, req.get("services"))
                     if q["question"] == a["question"]), a.get("category") or "Pasted question")
         out.append({"provider": a["provider"], "question": a["question"], "language": a["language"], "category": cat,
-                    "text": a["text"], "mentioned": bool(ext["mentioned"]), "competitors": ext.get("competitors", []),
+                    "text": a["text"], "mentioned": bool(ext["mentioned"]), "position": ext.get("position"),
+                    "competitors": ext.get("competitors", []),
                     "claims": ext.get("claims", [])})
     res = summarize_check(out, facts, "pasted")
     res["questions"] = [{"question": j["question"], "language": j["language"], "category": j["category"]}
@@ -652,8 +654,8 @@ def summarize_check(out: list[dict], facts: list[dict], mode: str) -> dict:
         # Every question exactly as asked, who named the business, and each assistant's full answer.
         "by_prompt": [{"question": q, "language": rs[0]["language"], "category": rs[0]["category"], "rate": rate(rs),
                        "named_by": [r["provider"] for r in rs if r["mentioned"]],
-                       "answers": [{"provider": r["provider"], "mentioned": r["mentioned"], "text": r["text"][:1500]}
-                                   for r in rs]}
+                       "answers": [{"provider": r["provider"], "mentioned": r["mentioned"], "position": r.get("position"),
+                                    "text": r["text"][:1500]} for r in rs]}
                       for q, rs in ((q, [r for r in out if r["question"] == q])
                                     for q in dict.fromkeys(r["question"] for r in out))],
     }
