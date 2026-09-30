@@ -5,6 +5,18 @@ import { Copyable } from './SiteCheck.jsx'
 
 const APPS = ['chatgpt', 'gemini', 'perplexity', 'copilot', 'claude']
 
+function Ring({ value, label, tone }) {
+  const R = 54, C = 2 * Math.PI * R, v = value ?? 0
+  return (
+    <svg viewBox="0 0 128 128" className={`ring ${tone}`} role="img" aria-label={`${value ?? '—'}% ${label}`}>
+      <circle cx="64" cy="64" r={R} className="ring-bg" />
+      <circle cx="64" cy="64" r={R} className="ring-fg" strokeDasharray={`${(C * v) / 100} ${C}`} transform="rotate(-90 64 64)" />
+      <text x="64" y="66" textAnchor="middle" className="ring-num">{value == null ? '—' : `${value}%`}</text>
+      <text x="64" y="86" textAnchor="middle" className="ring-label">{label}</text>
+    </svg>
+  )
+}
+
 // Free and real: the owner asks the report's questions in the free AI apps and pastes the answers back.
 function RealAnswers({ S, questions, checkId, onResult, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -165,98 +177,134 @@ export default function Scan({ t, lang, initialUrl, lead, onStarted, onPlans, on
   )
 
   const c = r.check, b = r.business
-  const pending = c.mode === 'pending'  // no API keys: nothing invented, the owner pastes real answers
-  const site = r.blocked ? { score: null, checks: [], fixes: null } : r.site
-  const named = c.inclusion ?? 0
-  const lost = c.missed
+  const pending = c.mode === 'pending'  // no real answers yet: show an estimate from real website signals
+  const measured = !pending && c.mode !== 'demo'
+  const site = r.blocked ? { score: null, checks: [], fixes: null, estimate: null, found: null } : r.site
+  const est = site.estimate
+  const pct = pending ? (est ? est.pct : null) : (c.inclusion ?? 0)
   const wrongFacts = c.facts.flatMap((f) => f.said.filter((x) => x.match === false).map((x) => ({ ...x, fact: f.label, truth: f.value })))
   const failed = site.checks.filter((x) => !x.pass).sort((a, b2) => b2.weight - a.weight)
-  const offeredMissed = r.missed.filter((m) => m.offered)
+  const impact = (w) => (w >= 10 ? 'high' : w >= 8 ? 'medium' : 'low')
   const plan = [
-    ...wrongFacts.slice(0, 1).map((w) => S.planWrong(w.fact, ASSISTANT_NAMES[w.provider] || w.provider)),
-    ...offeredMissed.slice(0, 2).map((m) => S.planService(m.category)),
-    ...failed.slice(0, 3).map((x) => `${t.siteCheck[x.id].title}: ${t.siteCheck[x.id].fix(x.detail)}`),
+    ...(r.blocked ? [{ title: S.planBlockedTitle, text: S.planBlocked, impact: 'high' }] : []),
+    ...wrongFacts.slice(0, 2).map((w) => ({ title: S.planWrongTitle(w.fact), text: S.planWrong(w.fact, ASSISTANT_NAMES[w.provider] || w.provider), impact: 'high' })),
+    ...r.missed.filter((m) => m.offered).slice(0, 2).map((m) => ({ title: S.planServiceTitle(m.category), text: S.planService(m.category), impact: 'high' })),
+    ...failed.map((x) => ({ title: t.siteCheck[x.id].title, text: t.siteCheck[x.id].fix(x.detail), why: t.siteCheck[x.id].why, impact: impact(x.weight) })),
   ].slice(0, 5)
+  const F = site.found
+  const readable = F ? [F.phones.length > 0, F.hours.length > 0, F.prices.length > 0, F.services.length > 0, !!F.area].filter(Boolean).length : 0
+  const tone = pct == null ? 'none' : pct >= 60 ? 'good' : pct >= 40 ? 'ok' : 'low'
 
   return (
-    <div className="stack">
-      {c.mode === 'demo' && <p className="sim-banner" role="note">{S.simBanner}</p>}
+    <div className="report">
       {r.city_conflict && (
         <div className="city-warning" role="alert">
           <span>{S.cityConflict(r.city_conflict, b.city)}</span>
           <button className="btn small" onClick={() => run(url, { name: b.name, city: r.city_conflict, segment: b.segment })}>{S.useCity(r.city_conflict)}</button>
         </div>
       )}
-      {pending && <p className="pending-banner" role="note">{S.pendingBanner}</p>}
-      {c.mode === 'pasted' && <p className="real-banner" role="note">{S.realBanner(c.answers)}</p>}
-      {c.mode !== 'live' && c.questions && (
-        <RealAnswers S={S} questions={c.questions} checkId={r.check_id} defaultOpen={pending}
-          onResult={(res) => { setR({ ...r, check: res.check, missed: res.missed }); window.scrollTo(0, 0) }} />
-      )}
-      <section className="hero wide">
-        <p className="eyebrow">{S.eyebrow}</p>
-        <h1>{pending ? S.pendingHeadline(b.name) : c.mode === 'pasted' && c.answers < 10 ? S.headlineFew(b.name, named, c.answers) : S.headline(b.name, named)}</h1>
-        <p>{pending ? S.pendingSub(c.questions.length) : S.subline(lost, c.answers, c.languages?.length || 1, Object.keys(c.by_assistant || {}).length, c.mode === 'pasted')}</p>
+
+      <section className="rep-head">
+        <div className="rep-id">
+          <p className="eyebrow">{S.eyebrow}</p>
+          <h1>{b.name}</h1>
+          <p className="muted">{[b.city, t.segment[b.segment]].filter(Boolean).join(' · ')}</p>
+          <p className="rep-lead">{pct == null ? S.leadNone : measured ? (c.answers < 10 ? S.leadFew(pct, c.answers) : S.leadMeasured(pct, c.answers)) : S.leadEstimate(est.low, est.high)}</p>
+          <span className={`src-badge ${measured ? 'real' : 'est'}`}>{measured ? S.badgeMeasured(c.answers) : S.badgeEstimate}</span>
+          {!measured && est && (
+            <p className="based-on">{S.basedOn}: {est.drivers.map((d) => S.driver[d.id](d)).join(' · ')}</p>
+          )}
+        </div>
+        <Ring value={pct} label={measured ? S.ringMeasured : S.ringEstimate} tone={tone} />
       </section>
 
-      <div className="figures">
-        <div className="figure"><b>{pending ? '—' : `${named}%`}</b><span>{pending ? S.figPending : S.figNamed}</span></div>
-        <div className="figure"><b>{pending ? '—' : lost}</b><span>{pending ? S.figPendingLost : S.figLost(c.answers)}</span></div>
-        <div className="figure"><b>{pending ? '—' : wrongFacts.length}</b><span>{pending ? S.figPendingWrong : S.figWrong}</span></div>
-        <div className="figure"><b>{site.score == null ? '—' : `${site.score}/100`}</b><span>{site.score == null ? S.figSiteBlocked : S.figSite}</span></div>
+      <div className="rep-stats">
+        <div><b>{site.score == null ? '—' : site.score}<small>/100</small></b><span>{S.statSite}</span></div>
+        <div><b>{F ? readable : '—'}<small>/5</small></b><span>{S.statFacts}</span></div>
+        {measured
+          ? <div><b>{c.missed}<small>/{c.answers}</small></b><span>{S.statLost}</span></div>
+          : <div><b>{c.questions?.length ?? 0}</b><span>{S.statQuestions}</span></div>}
       </div>
 
-      {!pending && <section className="panel">
-        <div className="panel-head"><h2>{S.missedTitle}</h2><span className="faint">{S.missedHint}</span></div>
-        {r.missed.length === 0 ? <p className="success">{S.missedNone}</p> : (
-          <div className="missed-list">
-            {r.missed.map((m) => (
-              <article key={m.category} className="missed">
+      <section className="rep-card">
+        <div className="rep-card-head"><h2>{S.planTitle}</h2><span className="faint">{S.planHint}</span></div>
+        {plan.length === 0 ? <p className="success">{S.planNone}</p> : (
+          <ol className="plan-cards">
+            {plan.map((p, i) => (
+              <li key={p.title}>
+                <span className="pc-num">{i + 1}</span>
                 <div>
-                  <h3>{t.checkCategory[m.category] || m.category}{m.offered && <span className="tag offered">{S.youOffer}</span>}</h3>
-                  <p className="faint">{S.missedRate(m.rate, m.answers)}{m.named_instead?.length ? ` ${S.namedHere(m.named_instead.join(', '))}` : ''}</p>
-                  <p className="win"><strong>{S.howToWin}:</strong> {m.offered ? S.winOffered(m.category) : S.win[WIN[m.category] || 'best']}</p>
+                  <div className="pc-head"><strong>{p.title}</strong><span className={`impact ${p.impact}`}>{S.impact[p.impact]}</span></div>
+                  <p>{p.text}</p>
+                  {p.why && <p className="faint">{p.why}</p>}
                 </div>
-                <Bars items={[{ label: S.namedYou, value: m.rate ?? 0 }]} />
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      <section className="rep-card">
+        <div className="rep-card-head"><h2>{measured ? S.missedTitle : S.likelyTitle}</h2><span className="faint">{measured ? S.missedHint : S.likelyHint}</span></div>
+        {measured ? (r.missed.length === 0 ? <p className="success">{S.missedNone}</p> : (
+          <div className="miss-grid">
+            {r.missed.map((m) => (
+              <article key={m.category}>
+                <div className="pc-head"><strong>{t.checkCategory[m.category] || m.category}</strong><span className="miss-rate">{m.rate}%</span></div>
+                <p className="faint">{m.named_instead?.length ? S.namedHere(m.named_instead.join(', ')) : S.missedRate(m.rate, m.answers)}</p>
+                <p>{m.offered ? S.winOffered(m.category) : S.win[WIN[m.category] || 'best']}</p>
               </article>
             ))}
           </div>
-        )}
-        {c.named_instead.length > 0 && <p className="note">{S.instead(c.named_instead.map((x) => x.name).join(', '))}</p>}
-      </section>}
-
-      {!pending && <PromptList S={S} c={c} city={b.city} />}
-
-      {!pending && <div className="two even">
-        <section className="panel">
-          <div className="panel-head"><h2>{S.wrongTitle}</h2></div>
-          {wrongFacts.length === 0 ? <p className="muted">{r.blocked ? S.wrongBlocked : S.wrongNone}</p> : (
-            <table className="audit"><tbody>
-              {wrongFacts.map((w, i) => (
-                <tr key={i}><td>{ASSISTANT_NAMES[w.provider] || w.provider}</td><td>{w.fact}</td>
-                  <td><span className="verdict wrong">{w.value}</span></td><td className="faint">{S.yourSite}: {w.truth}</td></tr>
-              ))}
-            </tbody></table>
-          )}
-        </section>
-        <section className="panel">
-          <div className="panel-head"><h2>{S.byAssistant}</h2></div>
-          <Bars items={Object.entries(c.by_assistant).map(([k, v]) => ({ label: ASSISTANT_NAMES[k] || k, value: v }))} />
-        </section>
-      </div>}
-
-      <section className="panel">
-        <div className="panel-head"><h2>{S.planTitle}</h2><span className="faint">{S.planHint}</span></div>
-        <ol className="action-plan">{(r.blocked ? [S.planBlocked, ...plan] : plan).map((p) => <li key={p}>{p}</li>)}</ol>
-        {site.fixes && <div className="two even" style={{ marginTop: '1rem' }}>
-          <Copyable t={t} label={t.siteFaqEn} text={site.fixes.faq_en.join('\n')} />
-          <Copyable t={t} label={t.siteFaqEs} text={site.fixes.faq_es.join('\n')} />
-        </div>}
-        {!r.blocked && <p style={{ marginTop: '0.8rem' }}><button className="linkish" onClick={() => onWebsiteReport({ website: r.url || site.url, name: b.name, city: b.city, segment: b.segment })}>{S.fullSite} →</button></p>}
+        )) : (!est || est.likely_missed.length === 0 ? <p className="success">{S.likelyNone}</p> : (
+          <div className="miss-grid">
+            {est.likely_missed.map((m) => (
+              <article key={m.check}>
+                <div className="pc-head"><strong>{m.label}</strong><span className="impact medium">{S.likelyTag}</span></div>
+                <p className="faint">{t.siteCheck[m.check].why}</p>
+              </article>
+            ))}
+          </div>
+        ))}
       </section>
-      {r.blocked && <section className="panel blocked-note"><h2>{S.blockedTitle}</h2><p>{S.blockedReport}</p></section>}
 
-      
+      {measured && <PromptList S={S} c={c} city={b.city} />}
+      {measured && (
+        <div className="two even">
+          <section className="rep-card">
+            <div className="rep-card-head"><h2>{S.wrongTitle}</h2></div>
+            {wrongFacts.length === 0 ? <p className="muted">{S.wrongNone}</p> : (
+              <table className="audit"><tbody>
+                {wrongFacts.map((w, i) => (
+                  <tr key={i}><td>{ASSISTANT_NAMES[w.provider] || w.provider}</td><td>{w.fact}</td>
+                    <td><span className="verdict wrong">{w.value}</span></td><td className="faint">{S.yourSite}: {w.truth}</td></tr>
+                ))}
+              </tbody></table>
+            )}
+          </section>
+          <section className="rep-card">
+            <div className="rep-card-head"><h2>{S.byAssistant}</h2></div>
+            <Bars items={Object.entries(c.by_assistant).map(([k, v]) => ({ label: ASSISTANT_NAMES[k] || k, value: v }))} />
+          </section>
+        </div>
+      )}
+
+      {site.fixes && (
+        <details className="rep-card fold">
+          <summary><span><strong>{S.fixesTitle}</strong><span className="faint"> · {S.fixesHint}</span></span></summary>
+          <div className="two even" style={{ marginTop: '0.9rem' }}>
+            <Copyable t={t} label={t.siteFaqEn} text={site.fixes.faq_en.join('\n')} />
+            <Copyable t={t} label={t.siteFaqEs} text={site.fixes.faq_es.join('\n')} />
+          </div>
+          <p style={{ marginTop: '0.8rem' }}><button className="linkish" onClick={() => onWebsiteReport({ website: r.url || site.url, name: b.name, city: b.city, segment: b.segment })}>{S.fullSite} →</button></p>
+        </details>
+      )}
+
+      {c.mode !== 'live' && c.questions && (
+        <RealAnswers S={S} questions={c.questions} checkId={r.check_id}
+          onResult={(res) => { setR({ ...r, check: res.check, missed: res.missed }); window.scrollTo(0, 0) }} />
+      )}
+
       <section className="cta">
         <div><h2>{S.ctaTitle}</h2><p>{S.ctaText}</p></div>
         <div className="cta-actions">

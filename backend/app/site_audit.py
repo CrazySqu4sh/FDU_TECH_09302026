@@ -294,6 +294,8 @@ def discover(site: dict, segment: str) -> dict:
         "spanish": lang_es, "faq": bool(re.search(r"\bfaq\b|frequently asked|preguntas frecuentes", text, re.I))
         or "faqpage" in ld,
         "reviews": bool(re.search(r"\breviews?\b|reseñas|\bstars?\b|★", text, re.I)),
+        "rating": max([float(x) for x in re.findall(r'"ratingvalue":\s*"?([\d.]+)', ld) if float(x) <= 5] or [0]) or None,
+        "review_count": max([int(x) for x in re.findall(r'"(?:reviewcount|ratingcount)":\s*"?(\d+)', ld)] or [0]) or None,
         "jsonld_types": [t for t in dict.fromkeys(types) if t],
         "jsonld_fields": {f: f.lower() in ld for f in ("telephone", "address", "areaServed", "openingHours", "priceRange")},
     }
@@ -324,6 +326,40 @@ def checks(d: dict, site: dict, name: str, city: str, segment: str = "") -> list
         ("reviews", 5, d["reviews"], {}),
     ]
     return [{"id": i, "weight": w, "pass": bool(p), "detail": det} for i, w, p, det in c]
+
+
+# Which customer questions each website gap tends to cost (used before real AI answers exist).
+GAP_QUESTIONS = {
+    "hours": ("hours", "Questions about hours (“open late”, “open on weekends”)"),
+    "prices": ("prices", "Price questions (“how much…”, “cheap and good…”)"),
+    "menu": ("prices", "Menu and price questions (“how much are the tacos?”)"),
+    "area": ("area", "“Near me” and neighborhood questions"),
+    "services": ("services", "Questions about specific services you offer"),
+    "spanish": ("spanish", "Questions asked in Spanish"),
+    "reviews": ("reviews", "“Best in town” and “best reviewed” questions"),
+    "structured_data": ("structured", "All questions: AI has to guess your basic facts"),
+    "trust": ("trust", "“Insured / licensed” questions"),
+    "crawlers": ("crawlers", "All questions: AI search can’t read your site"),
+}
+
+
+def estimate(d: dict, cs: list[dict], segment: str) -> dict:
+    """Estimated share of customer questions where AI is likely to name the business, from real website signals.
+    Clearly an estimate: it's replaced by the measured number as soon as real AI answers exist."""
+    score = sum(c["weight"] for c in cs if c["pass"])
+    pct = 12 + 0.5 * score                     # how well AI can read and verify the business
+    drivers = [{"id": "site", "value": score}]
+    if d.get("rating") and d.get("review_count"):
+        boost = (8 if d["rating"] >= 4.5 else 4 if d["rating"] >= 4.0 else 0) + (6 if d["review_count"] >= 100 else 3 if d["review_count"] >= 25 else 0)
+        pct += boost
+        drivers.append({"id": "rating", "value": d["rating"], "count": d["review_count"]})
+    if d.get("michelin"):  # press and awards are what AI answers lean on most for "best" questions
+        pct += 25
+        drivers.append({"id": "award"})
+    pct = int(max(5, min(90, round(pct))))
+    weak = [{"check": c["id"], "area": GAP_QUESTIONS[c["id"]][0], "label": GAP_QUESTIONS[c["id"]][1], "weight": c["weight"]}
+            for c in sorted(cs, key=lambda c: -c["weight"]) if not c["pass"] and c["id"] in GAP_QUESTIONS]
+    return {"pct": pct, "low": max(0, pct - 15), "high": min(100, pct + 15), "drivers": drivers, "likely_missed": weak[:4]}
 
 
 def fixes(d: dict, name: str, city: str, url: str, segment: str, items: list | None = None,
@@ -465,5 +501,6 @@ def audit(db, url: str, name: str = "", city: str = "", segment: str = "cleaning
         sug.append({"key": "credential.insurance", "label": "Insured", "label_es": "con seguro", "value": "yes", "category": "insurance"})
     for s in d["services"][:6]:
         sug.append({"label": s["label"], "label_es": s["label_es"], "value": "yes", "category": "service"})
+    res["estimate"] = estimate(d, cs, segment)
     res["suggested_facts"] = [{**f, "evidence": "document", "source": f"Website ({agents.domain_of(site['url'])})"} for f in sug]
     return res
