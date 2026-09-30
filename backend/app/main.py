@@ -329,7 +329,8 @@ def quick_scan(body: QuickScanIn):
     services_found = [] if blocked else site["found"]["services"][:3]
     req = {"name": b["name"], "category": cat, "category_es": cat_es, "segment": b["segment"], "city": b["city"],
            "website": site["url"], "competitors": [], "facts": facts, "services": services_found,
-           "cuisine": None if blocked else site.get("cuisine")}
+           "cuisine": None if blocked else site.get("cuisine"),
+           "style": None if blocked else site.get("style"), "michelin": False if blocked else site.get("michelin")}
     check = services.run_check(req)
     check["site_score"] = None if blocked else site["score"]
     with get_db() as db:

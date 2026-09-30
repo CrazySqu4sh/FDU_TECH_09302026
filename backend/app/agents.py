@@ -479,6 +479,25 @@ def _restaurant_questions(biz: dict, keys: list, features: list | None) -> list[
     city, name = biz["city"], biz["name"]
     c = biz.get("cuisine") or {"en": "food", "es": "comida"}
     en, es = c["en"], c["es"]
+    if biz.get("style") == "fine_dining":  # nobody asks for a $200 tasting menu that's "cheap" or "delivered"
+        pairs = [
+            (f"What are the best fine dining restaurants in {city}?", f"¿Cuáles son los mejores restaurantes de alta cocina en {city}?",
+             "Best in town"),
+            (f"Best tasting menu in {city}", f"Mejor menú de degustación en {city}", "Tasting menu"),
+            (f"Romantic restaurant for a special occasion in {city}", f"Restaurante romántico para una ocasión especial en {city}",
+             "Special occasion"),
+            ((f"Michelin-starred restaurants in {city}", f"Restaurantes con estrella Michelin en {city}", "Awards")
+             if biz.get("michelin") else
+             (f"Award-winning restaurants in {city}", f"Restaurantes premiados en {city}", "Awards")),
+            (f"Restaurants in {city} with a great wine list", f"Restaurantes en {city} con una gran carta de vinos", "Wine list"),
+            (f"Restaurant for a private dinner or event in {city}", f"Restaurante para una cena privada o evento en {city}",
+             "Private events"),
+            (f"What do you know about {name}? Is it a good choice?", f"¿Qué sabes de {name}? ¿Es buena opción?", "About your business"),
+        ]
+        if biz.get("cuisine"):
+            pairs.insert(1, (f"Best {en} restaurant in {city}", f"Mejor restaurante de {es} en {city}", f"Best {en}"))
+        return [{"question": q, "language": lang, "category": cat, "related_facts": keys}
+                for e, s_, cat in pairs for lang, q in (("en", e), ("es", s_)) if lang in SCAN_LANGUAGES]
     pairs = [
         (f"Where can I get the best {en} in {city}?", f"¿Cuáles son los mejores lugares de {es} en {city}?", "Best in town"),
         (f"{en[:1].upper() + en[1:]} open late in {city}", f"Lugares de {es} abiertos de noche en {city}", "Open late"),

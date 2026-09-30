@@ -56,7 +56,10 @@ TRUST = [("insured", r"insured|bonded|asegurad|con seguro|fianza"), ("licensed",
 STATES = ("AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|"
           "OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC")
 CITY = re.compile(rf"\b([A-Z][a-zA-Z.]+(?: [A-Z][a-zA-Z.]+){{0,2}}),\s?({STATES})\b")
+FINE_DINING = r"tasting menu|michelin|prix[\s-]fixe|wine pairing|chef'?s counter|fine dining|omakase|sommelier|degustaci"
 CUISINES = [  # (pattern, English, Spanish) — used to ask diners' real questions ("best tacos in Austin")
+    (r"live[\s-]fire|wood[\s-]fired|hearth", "live-fire cooking", "cocina a la leña"),
+    (r"steakhouse|\bsteaks?\b", "steak", "cortes de carne"),
     (r"\btacos?\b|taquer", "tacos", "tacos"), (r"\bbirria", "birria", "birria"), (r"\bpupusa", "pupusas", "pupusas"),
     (r"mexican|mexicana", "Mexican food", "comida mexicana"), (r"\bpizza", "pizza", "pizza"), (r"\bsushi", "sushi", "sushi"),
     (r"\bburgers?\b", "burgers", "hamburguesas"), (r"\bbbq\b|barbecue", "BBQ", "barbacoa"), (r"\bthai\b", "Thai food", "comida tailandesa"),
@@ -260,13 +263,21 @@ def discover(site: dict, segment: str) -> dict:
     scores = {seg: len(re.findall(rx, text, re.I)) for seg, rx in SEGMENT_HINTS.items()}
     if any(t in ("Restaurant", "FoodEstablishment", "Menu", "CafeOrCoffeeShop", "Bakery") for t in types):
         scores["restaurant"] = scores.get("restaurant", 0) + 10
-    cuisine = max(CUISINES, key=lambda c: len(re.findall(c[0], text, re.I)))
-    cuisine = cuisine if re.search(cuisine[0], text, re.I) else None
+    # What the business says about itself up top (title, description, headline) outweighs one menu ingredient:
+    # "Michelin-Starred Live Fire Restaurant" beats a "thai basil" garnish. Body-text mentions need to repeat.
+    head = " ".join([title.group(1) if title else "", _meta(home, "description"), _meta(home, "og:description"),
+                     re.sub(r"<[^>]+>", " ", h1.group(1)) if h1 else ""])
+    def cuisine_score(c):
+        return 5 * len(re.findall(c[0], head, re.I)) + len(re.findall(c[0], text, re.I))
+    cuisine = max(CUISINES, key=cuisine_score)
+    cuisine = cuisine if re.search(cuisine[0], head, re.I) or len(re.findall(cuisine[0], text, re.I)) >= 3 else None
+    style = "fine_dining" if len(re.findall(FINE_DINING, head + " " + text, re.I)) >= 2 else "casual"
     guess = max(scores, key=scores.get) if max(scores.values()) >= 3 else "services"
     lang_es = bool(re.search(r'hreflang=["\']es|lang=["\']es', " ".join(htmls), re.I)) or len(ES_WORDS.findall(text)) >= 6
     return {
         "name": name[:80], "city": city, "segment_guess": guess,
-        "cuisine": {"en": cuisine[1], "es": cuisine[2]} if cuisine else None,
+        "cuisine": {"en": cuisine[1], "es": cuisine[2]} if cuisine else None, "style": style,
+        "michelin": bool(re.search(r"michelin", head + " " + text, re.I)),
         "has_menu": any("/menu" in u for u in (p["url"] for p in site["pages"])) or "menu" in ld,
         "text": text, "pages_read": [p["url"] for p in site["pages"]],
         "title": re.sub(r"\s+", " ", title.group(1)).strip() if title else "",
@@ -423,7 +434,7 @@ def audit(db, url: str, name: str = "", city: str = "", segment: str = "cleaning
     cs = checks(d, site, name, city, segment)
     score = sum(c["weight"] for c in cs if c["pass"])
     res = {"ok": True, "url": site["url"], "business": {"name": name, "city": city, "segment": segment}, "found_name": d["name"],
-           "cuisine": d["cuisine"], "simulated": bool(site.get("simulated")), "errors": site["errors"],
+           "cuisine": d["cuisine"], "style": d["style"], "michelin": d["michelin"], "simulated": bool(site.get("simulated")), "errors": site["errors"],
            "pages_read": d["pages_read"], "score": score, "checks": cs,
            "found": {k: d[k] for k in ("title", "description", "phones", "prices", "hours", "area", "services", "trust",
                                        "spanish", "faq", "jsonld_types")},
