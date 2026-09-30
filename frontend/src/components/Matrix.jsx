@@ -6,6 +6,11 @@ export function pretty(category, v, lang = 'en') {
   if (category === 'shipping') return `${v} ${es ? 'días' : 'days'}`
   if (category === 'returns') return ['none', '0'].includes(v) ? (es ? 'Sin devoluciones' : 'No returns') : `${v} ${es ? 'días' : 'days'}`
   if (category === 'price') return `$${v}`
+  if (category === 'warranty') return ['none', '0'].includes(v) ? (es ? 'Sin garantía' : 'No warranty') : `${v} ${es ? 'meses' : 'months'}`
+  if ((category === 'service' || category === 'language') && /^(yes|no|s[ií])$/i.test(v)) return /^no$/i.test(v) ? 'No' : (es ? 'Sí' : 'Yes')
+  if (category === 'insurance') return /^(yes|s[ií])$/i.test(v) ? (es ? 'Asegurado' : 'Insured') : (es ? 'Sin seguro' : 'Not insured')
+  if (category === 'license' && /^(none|no|not licensed|unlicensed)$/i.test(v)) return es ? 'Sin licencia' : 'Not licensed'
+  if (category === 'feature') return /^(yes|s[ií])$/i.test(v) ? (es ? 'Sí' : 'Yes') : 'No'
   if (v === 'closed') return es ? 'Cerrado' : 'Closed'
   return v.replace(/^(\d{2}:\d{2})-(\d{2}:\d{2})$/, '$1–$2')
 }

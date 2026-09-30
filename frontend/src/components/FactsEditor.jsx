@@ -1,16 +1,19 @@
 export const CATEGORIES = {
   ecommerce: ['price', 'stock', 'shipping', 'returns', 'service', 'language', 'contact', 'policy'],
+  tech: ['price', 'stock', 'spec', 'feature', 'warranty', 'shipping', 'returns', 'language', 'contact', 'policy'],
   services: ['hours', 'price', 'service', 'language', 'contact', 'policy'],
+  cleaning: ['price', 'service', 'insurance', 'service_area', 'hours', 'contact', 'language', 'policy'],
+  trades: ['license', 'insurance', 'service_area', 'service', 'price', 'hours', 'contact', 'language', 'policy'],
 }
 const EVIDENCE = ['system', 'document', 'owner']
 
 export const blankFact = (segment = 'services') => ({ product: '', product_es: '', label: '', label_es: '', value: '',
-  category: segment === 'ecommerce' ? 'price' : 'service', evidence: 'owner', source: 'Owner entry' })
+  category: ['services', 'trades', 'cleaning'].includes(segment) ? 'service' : 'price', evidence: 'owner', source: 'Owner entry' })
 
-const HINTS = { hours: '08:00-16:00 or closed', price: '49.99', stock: 'in stock / out of stock', shipping: '3-5', returns: '30 or none', service: 'yes / no', language: 'yes / no' }
+const HINTS = { hours: '08:00-16:00 or closed', price: '49.99', stock: 'in stock / out of stock', shipping: '3-5', returns: '30 or none', service: 'yes / no', language: 'yes / no', spec: '16 GB', feature: 'yes / no', warranty: '12 (months) or none', license: 'DAL-CR-48213 or none', insurance: 'yes / no', service_area: 'Dallas, Irving, Garland' }
 
 export default function FactsEditor({ facts, setFacts, t, onRemove, segment = 'services' }) {
-  const shop = segment === 'ecommerce'
+  const shop = segment === 'ecommerce' || segment === 'tech'
   const cats = CATEGORIES[segment] || CATEGORIES.services
   const update = (i, field, v) => setFacts(facts.map((f, j) => (j === i ? { ...f, [field]: v } : f)))
   return (

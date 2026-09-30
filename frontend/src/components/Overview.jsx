@@ -1,6 +1,7 @@
 import { ASSISTANT_NAMES } from '../api.js'
+import Locked from './Locked.jsx'
 
-function Bars({ items }) {
+export function Bars({ items }) {
   return (
     <div className="bars">
       {items.map((it) => (
@@ -53,13 +54,15 @@ function Trend({ scans, t }) {
   )
 }
 
-export default function Overview({ data, t }) {
+export default function Overview({ data, t, onUpgrade }) {
   const L = data.latest
   if (!L) return <div className="panel empty">{t.noScan}</div>
   const active = data.incidents.filter((i) => ['open', 'needs_review'].includes(i.status)).length
   const res = data.avg_resolution_hours
   const gap = L.language_gap ?? 0
-  const shop = data.business.segment === 'ecommerce'
+  const shop = data.business.segment === 'ecommerce' || data.business.segment === 'tech'
+  const has = (f) => data.plan.features.includes(f)
+  const g = data.plan.guarantee
   return (
     <div className="stack">
       <section className="hero">
@@ -78,23 +81,39 @@ export default function Overview({ data, t }) {
         )}
       </section>
 
+      {L.responses < 12 && <p className="sim-bar">{t.smallSample(L.responses)}</p>}
+
       <div className="figures">
         {shop
           ? <div className="figure"><b>{L.inclusion_rate}%</b><span>{t.inclusion}</span></div>
           : <div className="figure"><b>{L.fact_accuracy ?? '–'}%</b><span>{t.accuracy}</span></div>}
-        <div className="figure"><b>{L.missed_opportunities}</b><span>{t.missed}: {t.missedHint}</span></div>
+        <div className="figure"><b>{L.missed_opportunities}</b><span>{t.missed}: {t.missedHint}</span>
+          {!has('missed_opportunities') && <span className="lock-hint">🔒 {t.lockedMissedShort}</span>}</div>
         <div className="figure"><b>{active}</b><span>{t.openIssues}</span></div>
         <div className="figure"><b>{res == null ? '–' : res < 1 ? '<1 h' : res < 48 ? `${res} h` : `${Math.round(res / 24)} d`}</b><span>{t.resolution}</span></div>
       </div>
 
+      {g && (
+        <section className={`guarantee ${g.met ? 'met' : ''}`}>
+          <div>
+            <strong>{t.guaranteeTitle(g.target, g.days)}</strong>
+            <p>{g.met ? t.guaranteeMet(g.accuracy) : t.guaranteeProgress(g.accuracy ?? 0, g.target, g.day, g.days)}</p>
+          </div>
+          <div className="meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={g.accuracy ?? 0} aria-label={t.accuracy}>
+            <div style={{ width: `${g.accuracy ?? 0}%` }} />
+            <span style={{ left: `${g.target}%` }} />
+          </div>
+        </section>
+      )}
+
       <div className="two">
         <div className="stack">
-          {shop && L.product_accuracy.length > 0 && (
+          {shop && (has('product_accuracy') ? L.product_accuracy.length > 0 && (
             <section className="panel">
               <div className="panel-head"><h2>{t.productAccuracy}</h2><span className="faint">{t.productAccuracyHint}</span></div>
               <Bars items={L.product_accuracy.map((p) => ({ label: p.product, value: p.accuracy }))} />
             </section>
-          )}
+          ) : <Locked t={t} plan="gold" text={t.lockedProduct} onUpgrade={onUpgrade} compact />)}
           <section className="panel">
             <div className="panel-head">
               <h2>{shop ? t.byNeedShop : t.byNeed}</h2>
@@ -106,7 +125,8 @@ export default function Overview({ data, t }) {
         <div className="stack">
           <section className="panel">
             <div className="panel-head"><h2>{t.trend}</h2></div>
-            <Trend scans={data.scans} t={t} />
+            {has('scan_history') ? <Trend scans={data.scans} t={t} />
+              : <Locked t={t} plan="silver" text={t.lockedHistory} onUpgrade={onUpgrade} compact />}
           </section>
           <section className="panel">
             <div className="panel-head"><h2>{t.byAssistant}</h2></div>

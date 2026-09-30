@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS businesses (
     city TEXT NOT NULL,
     website TEXT DEFAULT '',
     competitors TEXT DEFAULT '[]',
+    plan TEXT NOT NULL DEFAULT 'trial',
+    plan_started_at TEXT,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS facts (
@@ -59,6 +61,13 @@ CREATE TABLE IF NOT EXISTS responses (
     position INTEGER,
     competitors TEXT DEFAULT '[]'
 );
+CREATE TABLE IF NOT EXISTS sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    response_id INTEGER NOT NULL REFERENCES responses(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    title TEXT DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS claims (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     response_id INTEGER NOT NULL REFERENCES responses(id) ON DELETE CASCADE,
@@ -85,6 +94,87 @@ CREATE TABLE IF NOT EXISTS incidents (
     approved_at TEXT,
     resolved_at TEXT,
     created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sales_weekly (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    week INTEGER NOT NULL,
+    phase TEXT NOT NULL,
+    search_sessions INTEGER NOT NULL,
+    ai_sessions INTEGER NOT NULL,
+    ai_orders INTEGER NOT NULL,
+    ai_revenue REAL NOT NULL,
+    expected_revenue REAL,
+    lost_revenue REAL,
+    inclusion INTEGER,
+    accuracy INTEGER,
+    misinfo_contacts INTEGER,
+    source TEXT NOT NULL,
+    UNIQUE(business_id, week)
+);
+CREATE TABLE IF NOT EXISTS checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    request TEXT NOT NULL,
+    result TEXT NOT NULL,
+    business_id INTEGER REFERENCES businesses(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS page_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    status TEXT NOT NULL,
+    text TEXT DEFAULT '',
+    simulated INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    fact_key TEXT NOT NULL,
+    snapshot_id INTEGER REFERENCES page_snapshots(id),
+    domain TEXT NOT NULL,
+    url TEXT NOT NULL,
+    value_found TEXT,
+    agrees INTEGER,
+    snippet TEXT DEFAULT '',
+    checked_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS citation_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    incident_id INTEGER NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+    snapshot_id INTEGER REFERENCES page_snapshots(id),
+    domain TEXT NOT NULL,
+    url TEXT NOT NULL,
+    supports INTEGER,
+    snippet TEXT DEFAULT '',
+    checked_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS labels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id INTEGER NOT NULL REFERENCES claims(id) ON DELETE CASCADE,
+    reviewer TEXT NOT NULL,
+    human_verdict TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS referral_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    week_start TEXT NOT NULL,
+    total_jobs INTEGER NOT NULL,
+    ai_jobs INTEGER NOT NULL,
+    ai_revenue REAL,
+    created_at TEXT NOT NULL,
+    UNIQUE(business_id, week_start)
+);
+CREATE TABLE IF NOT EXISTS proof_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    results TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,9 +203,24 @@ def get_db():
         conn.close()
 
 
+# Columns added after the first release, so older databases keep working.
+MIGRATIONS = {
+    "businesses": {"plan": "TEXT NOT NULL DEFAULT 'trial'", "plan_started_at": "TEXT"},
+    "sales_weekly": {"expected_revenue": "REAL", "inclusion": "INTEGER", "accuracy": "INTEGER"},
+    "incidents": {"approved_after_scan": "INTEGER", "origin": "TEXT", "origin_source": "TEXT"},
+    "responses": {"description": "TEXT DEFAULT ''", "descriptors": "TEXT DEFAULT '[]'", "sentiment": "TEXT",
+                  "model": "TEXT"},
+}
+
+
 def init_db():
     with get_db() as db:
         db.executescript(SCHEMA)
+        for table, cols in MIGRATIONS.items():
+            have = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+            for col, spec in cols.items():
+                if col not in have:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {spec}")
 
 
 def rows(cursor) -> list[dict]:

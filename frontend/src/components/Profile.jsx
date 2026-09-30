@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 import FactsEditor, { blankFact } from './FactsEditor.jsx'
+import FactCheck from './FactCheck.jsx'
 
-export default function Profile({ data, t, onSaved }) {
+export default function Profile({ data, t, lang, onSaved }) {
   const bizId = data.business.id
   const segment = data.business.segment
   const [facts, setFacts] = useState(data.facts)
@@ -37,6 +38,7 @@ export default function Profile({ data, t, onSaved }) {
 
   return (
     <div className="stack">
+      <FactCheck data={data} t={t} lang={lang} onChanged={onSaved} />
       <section className="panel">
         <div className="panel-head">
           <h2>{t.profile}</h2>

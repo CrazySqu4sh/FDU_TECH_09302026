@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import random
+from collections import defaultdict
 import re
 
 ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY")
@@ -54,6 +55,38 @@ def _claude(prompt: str, model: str, web: bool = False, max_tokens: int = 1500) 
     return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
 
 
+def _claude_web(prompt: str, model: str) -> tuple[str, list[dict]]:
+    """Claude with web search. Returns the answer and the pages it cited (or searched, if none were cited)."""
+    import anthropic
+    msg = anthropic.Anthropic().messages.create(
+        model=model, max_tokens=1500, messages=[{"role": "user", "content": prompt}],
+        tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}])
+    text, cited, searched = "", [], []
+    for b in msg.content:
+        kind = getattr(b, "type", "")
+        if kind == "text":
+            text += b.text
+            cited += [{"url": c.url, "title": getattr(c, "title", "") or ""}
+                      for c in (getattr(b, "citations", None) or []) if getattr(c, "url", None)]
+        elif kind == "web_search_tool_result" and isinstance(getattr(b, "content", None), list):
+            searched += [{"url": r.url, "title": getattr(r, "title", "") or ""}
+                         for r in b.content if getattr(r, "url", None)]
+    return text, cited or searched
+
+
+def _openai_web(prompt: str) -> tuple[str, list[dict]]:
+    """ChatGPT with web search. Returns the answer and the URLs it cited."""
+    from openai import OpenAI
+    resp = OpenAI().responses.create(model=OPENAI_MODEL, input=prompt, tools=[{"type": OPENAI_WEB_TOOL}])
+    sources = []
+    for item in getattr(resp, "output", None) or []:
+        for part in getattr(item, "content", None) or []:
+            sources += [{"url": a.url, "title": getattr(a, "title", "") or ""}
+                        for a in (getattr(part, "annotations", None) or [])
+                        if getattr(a, "type", "") == "url_citation" and getattr(a, "url", None)]
+    return resp.output_text, sources
+
+
 def _openai(prompt: str, web: bool = False) -> str:
     from openai import OpenAI
     client = OpenAI()
@@ -70,6 +103,17 @@ def _utility(prompt: str) -> str:
     return _openai(prompt)
 
 
+def model_for(provider: str) -> str:
+    return {"claude": CLAUDE_ASSISTANT_MODEL, "chatgpt": OPENAI_MODEL}.get(provider, provider)
+
+
+def chat(prompt: str) -> str:
+    """The owner-facing assistant uses the stronger model; no web access, it answers from supplied data."""
+    if ANTHROPIC_KEY:
+        return _claude(prompt, CLAUDE_ASSISTANT_MODEL, max_tokens=600)
+    return _openai(prompt)
+
+
 def parse_json(text: str):
     text = re.sub(r"```(?:json)?", "", text).strip()
     start = min([i for i in (text.find("{"), text.find("[")) if i != -1], default=-1)
@@ -82,10 +126,11 @@ def fact_name(fact: dict, lang: str = "en") -> str:
     """'Price' of product 'Leather huaraches' -> 'Leather huaraches price'."""
     label = fact["label"] if lang == "en" else (fact.get("label_es") or fact["label"])
     product = fact.get("product") or ""
+    low = label if label[:2].isupper() else label.lower()  # keep acronyms like RAM, SSD
     if lang == "es":
         product = fact.get("product_es") or product
-        return f"{label.lower()} de {product}" if product else label
-    return f"{product} {label.lower()}" if product else label
+        return f"{low} de {product}" if product else label
+    return f"{product} {low}" if product else label
 
 
 def display_value(fact: dict, value: str, lang: str = "en") -> str:
@@ -101,7 +146,25 @@ def display_value(fact: dict, value: str, lang: str = "en") -> str:
         return f"{value} days" if lang == "en" else f"{value} días"
     if cat == "price":
         return f"${value}"
+    if cat == "warranty":
+        if value in {"none", "0"}:
+            return "No warranty" if lang == "en" else "Sin garantía"
+        return f"{value} months" if lang == "en" else f"{value} meses"
+    if cat in {"feature", "insurance"}:
+        yes = value.lower() in {"yes", "sí", "si"}
+        return ("Yes" if yes else "No") if lang == "en" else ("Sí" if yes else "No")
+    if cat == "license" and value.strip().lower() in {"none", "no", "not licensed", "unlicensed"}:
+        return "Not licensed" if lang == "en" else "Sin licencia"
     return value
+
+
+def is_local(biz: dict) -> bool:
+    return biz.get("segment") in {"services", "trades", "cleaning"}
+
+
+def is_shop(biz: dict) -> bool:
+    """E-commerce and tech both sell products online; only services are local-first."""
+    return biz.get("segment") in {"ecommerce", "tech"}
 
 
 def _rng(*parts) -> random.Random:
@@ -179,39 +242,238 @@ def ecommerce_journeys(biz: dict, facts: list[dict]) -> list[dict]:
     return js[:MAX_JOURNEYS * 2]
 
 
+def tech_journeys(biz: dict, facts: list[dict]) -> list[dict]:
+    """Tech shoppers compare specs and budgets, and ask about warranty before buying refurbished."""
+    js = []
+
+    def add(q_en, q_es, category, related):
+        js.append({"question": q_en, "language": "en", "category": category, "related_facts": related})
+        js.append({"question": q_es, "language": "es", "category": category, "related_facts": related})
+
+    products = {}
+    for f in facts:
+        if f.get("product"):
+            products.setdefault(f["product"], {"es": f.get("product_es") or f["product"], "facts": []})
+            products[f["product"]]["facts"].append(f)
+    warranty = [f["key"] for f in facts if f["category"] == "warranty"]
+    returns = [f["key"] for f in facts if f["category"] == "returns"]
+    for name, p in products.items():
+        by_cat = defaultdict(list)
+        for f in p["facts"]:
+            by_cat[f["category"]].append(f["key"])
+        price = next((f for f in p["facts"] if f["category"] == "price"), None)
+        try:
+            budget = int(-(-float(price["value"]) // 100) * 100) if price else 500
+        except ValueError:
+            budget = 500
+        add(f"Is the {name} a good buy under ${budget}?",
+            f"¿El {p['es']} es buena compra por menos de ${budget}?",
+            name, by_cat["price"] + by_cat["stock"] + by_cat["spec"][:1])
+        if by_cat["spec"] or by_cat["feature"]:
+            add(f"What are the specs of the {name}? Is it worth it?",
+                f"¿Qué especificaciones tiene el {p['es']}? ¿Vale la pena?",
+                name, by_cat["spec"] + by_cat["feature"])
+    add("Where can I buy refurbished laptops and phones online with a good warranty?",
+        "¿Dónde compro laptops y celulares reacondicionados en línea con buena garantía?",
+        "Warranty", warranty + returns)
+    add(f"What warranty does {biz['name']} give on refurbished devices?",
+        f"¿Qué garantía da {biz['name']} en equipos reacondicionados?", "Store policies", warranty + returns)
+    return js[:MAX_JOURNEYS * 2]
+
+
+def trades_journeys(biz: dict, facts: list[dict]) -> list[dict]:
+    """Homeowners ask about trust first (licensed, insured), then price, area and language."""
+    city, cat = biz["city"], biz["category"]
+    cat_es = biz.get("category_es") or cat
+    js = []
+
+    def add(q_en, q_es, category, related):
+        js.append({"question": q_en, "language": "en", "category": category, "related_facts": related})
+        js.append({"question": q_es, "language": "es", "category": category, "related_facts": related})
+
+    keys = lambda *cats: [f["key"] for f in facts if f["category"] in cats]  # noqa: E731
+    add(f"Who is the best {cat} in {city}?", f"¿Quién es el mejor {cat_es} en {city}?", "General",
+        keys("license", "price")[:2])
+    add(f"Find me a licensed and insured {cat} in {city}", f"Busco un {cat_es} con licencia y seguro en {city}",
+        "Licensed and insured", keys("license", "insurance"))
+    for f in facts:
+        if f["category"] == "service" and f["value"].lower() in {"yes", "sí", "si"}:
+            add(f"{cat[:1].upper() + cat[1:]} in {city} with {f['label'].lower()}?",
+                f"¿{cat_es[:1].upper() + cat_es[1:]} en {city} con {(f.get('label_es') or f['label']).lower()}?",
+                f["label"], [f["key"]] + keys("price")[:1])
+    add(f"Is there a {cat} near {city} where they speak Spanish?", f"¿Hay algún {cat_es} cerca de {city} que hable español?",
+        "Spanish-speaking", keys("language", "contact"))
+    add(f"Which {cat} companies serve my area around {city}, and how do I call them?",
+        f"¿Qué empresas de {cat_es} dan servicio en mi zona cerca de {city} y cómo las llamo?",
+        "Service area", keys("service_area", "contact", "hours"))
+    return js[:MAX_JOURNEYS * 2]
+
+
+def cleaning_journeys(biz: dict, facts: list[dict]) -> list[dict]:
+    """What people ask when hiring cleaners: price, trust, what's included, area, timing, language."""
+    city, cat = biz["city"], biz["category"]
+    cat_es = biz.get("category_es") or cat
+    js = []
+
+    def add(q_en, q_es, category, related):
+        js.append({"question": q_en, "language": "en", "category": category, "related_facts": related})
+        js.append({"question": q_es, "language": "es", "category": category, "related_facts": related})
+
+    keys = lambda *cats: [f["key"] for f in facts if f["category"] in cats]  # noqa: E731
+    svc = {f["key"].split(".")[-1]: f["key"] for f in facts if f["category"] == "service"}
+    add(f"What is the best {cat} in {city}?", f"¿Cuál es el mejor {cat_es} en {city}?", "Best in town",
+        keys("price", "insurance")[:2])
+    add(f"How much does a deep clean cost for a 3-bedroom house in {city}?",
+        f"¿Cuánto cuesta una limpieza profunda de una casa de 3 recámaras en {city}?", "Deep clean price",
+        keys("price"))
+    add(f"Move-out cleaning near {city} this week", f"Limpieza de mudanza cerca de {city} esta semana",
+        "Move-out cleaning", [k for k in (svc.get("move_out"), svc.get("same_week")) if k] + keys("service_area")[:1])
+    add(f"Insured, background-checked house cleaners in {city}",
+        f"Limpiadoras con seguro y revisión de antecedentes en {city}", "Insured and checked",
+        keys("insurance") + [k for k in (svc.get("background_check"),) if k])
+    add(f"House cleaners in {city} who bring their own supplies",
+        f"Limpieza de casas en {city} que traiga sus propios productos", "Supplies included",
+        [k for k in (svc.get("supplies"), svc.get("eco")) if k])
+    add(f"Office cleaning on weekends in {city}", f"Limpieza de oficinas los fines de semana en {city}",
+        "Weekend office cleaning", [k for k in (svc.get("office"),) if k] + keys("hours"))
+    add(f"Cleaning service in {city} that speaks Spanish", f"Servicio de limpieza en {city} que hable español",
+        "Spanish-speaking", keys("language", "contact"))
+    return js[:MAX_JOURNEYS * 2]
+
+
 def generate_journeys(biz: dict, facts: list[dict]) -> list[dict]:
+    fallback = {"ecommerce": ecommerce_journeys, "tech": tech_journeys,
+                "trades": trades_journeys, "cleaning": cleaning_journeys}.get(biz.get("segment"), template_journeys)
     if is_demo():
-        if biz.get("segment") == "ecommerce":
-            return ecommerce_journeys(biz, facts)
-        return template_journeys(biz, facts)
+        return fallback(biz, facts)
     keys = [f["key"] for f in facts]
-    kind = ("an online store (e-commerce) that ships products" if biz.get("segment") == "ecommerce"
-            else "a local service business")
+    kind = {"ecommerce": "an online store (e-commerce) that ships products",
+            "tech": "an online store selling tech products (laptops, phones, accessories); shoppers compare "
+                    "specs, budgets like 'under $500', warranty and compatibility",
+            "cleaning": "a local cleaning service (house, deep, move-out, office); customers ask about price, "
+                        "insurance, background checks, supplies, service area, same-week availability and Spanish",
+            "trades": "a local contractor (home repair, roofing, remodeling); homeowners ask about license, "
+                      "insurance, free estimates, service area, emergency service and Spanish"}.get(
+        biz.get("segment"), "a local service business")
     prompt = f"""You write realistic questions shoppers ask AI assistants.
 Business type: {biz['category']}, {kind}, based in {biz['city']}.
 Its verified facts (keys): {keys}
 Write {MAX_JOURNEYS} questions: half in English, half in natural U.S. Spanish (Spanglish is fine).
 Cover different customer needs (price, specific products or services, availability, shipping,
-returns, hours, specialties, language). Use a product's name as the category for product questions.
+returns, hours, specialties, specs, features, warranty, language). Use a product's name as the category for product questions.
 Never mention the business name. Return ONLY a JSON array of objects:
 {{"question": str, "language": "en"|"es", "category": short need label in English,
  "related_facts": [fact keys from the list that the question is about]}}"""
     try:
         return parse_json(_utility(prompt))[:MAX_JOURNEYS]
     except Exception:
-        return ecommerce_journeys(biz, facts) if biz.get("segment") == "ecommerce" else template_journeys(biz, facts)
+        return fallback(biz, facts)
+
+
+# Placeholder rivals so a free check can simulate answers before the owner names real competitors.
+DEFAULT_COMPETITORS = {
+    "services": ["A national chain", "Top-rated local rival", "Franchise location nearby", "Budget competitor"],
+    "ecommerce": ["Big-box marketplace seller", "Top-rated online rival", "Discount online store", "Brand-name retailer"],
+    "tech": ["Big-box electronics outlet", "Refurb marketplace seller", "Discount laptop store", "Brand-name retailer"],
+    "cleaning": ["National cleaning franchise", "Top-rated local cleaners", "Gig-app cleaner", "Budget maid service"],
+    "trades": ["National home-services franchise", "Top-rated local contractor", "Lead-gen marketplace pro",
+               "Budget handyman service"],
+}
+
+
+def standard_key(category: str, label: str) -> str:
+    """Keys the journey and phrasing code understands, for facts typed during a free check."""
+    if category == "hours":
+        return f"hours.{label.split()[0].lower()}"
+    return {"license": "credential.license", "insurance": "credential.insurance", "service_area": "area.service",
+            "contact": "contact.phone", "warranty": "store.warranty", "returns": "store.returns",
+            "shipping": "store.shipping", "language": "language.spanish"}.get(category, "")
+
+
+def check_journeys(biz: dict, facts: list[dict]) -> list[dict]:
+    """Free AI Check: four customer questions in English and Spanish, no verified profile needed."""
+    cat, cat_es, city, name = biz["category"], biz.get("category_es") or biz["category"], biz["city"], biz["name"]
+    keys = [f["key"] for f in facts]
+    shop = is_shop(biz)
+    where, where_es = ("online", "en línea") if shop else (f"in {city}", f"en {city}")
+    pairs = [
+        (f"What is the best {cat} {where}?", f"¿Cuál es el mejor {cat_es} {where_es}?", "Best in category"),
+        (f"Which {cat} {where} has fair prices and good reviews?",
+         f"¿Qué {cat_es} {where_es} tiene buenos precios y buenas reseñas?", "Prices and reviews"),
+        (f"Is there a {cat} {where} where they speak Spanish?", f"¿Hay algún {cat_es} {where_es} donde hablen español?",
+         "Spanish-speaking"),
+        (f"What do you know about {name}? Is it a good choice?", f"¿Qué sabes de {name}? ¿Es buena opción?",
+         "About your business"),
+    ]
+    js = []
+    for en, es, category in pairs:
+        js.append({"question": en, "language": "en", "category": category, "related_facts": keys})
+        js.append({"question": es, "language": "es", "category": category, "related_facts": keys})
+    return js
 
 
 # -------------------------------------------------------- Query Runner (live)
 
-def ask_assistant(provider: str, question: str, city: str) -> str:
+def ask_assistant(provider: str, question: str, city: str) -> tuple[str, list[dict]]:
+    """Returns (answer, sources). Sources are the web pages the assistant cited: what it relied on."""
     # APIs have no GPS location, so we state the city the way a local user's app would.
     prompt = f"{question}\n\n(I'm located in {city}.)" if city else question
     if provider == "claude":
-        return _claude(prompt, CLAUDE_ASSISTANT_MODEL, web=True)
+        return _claude_web(prompt, CLAUDE_ASSISTANT_MODEL)
     if provider == "chatgpt":
-        return _openai(prompt, web=True)
+        return _openai_web(prompt)
     raise ValueError(f"Unsupported provider {provider}")
+
+
+# ------------------------------------------------------------ Sources
+
+SOURCE_KINDS = [  # (domain fragment, kind, label)
+    ("google.", "profile", "Google Business Profile / Maps"), ("maps.apple", "profile", "Apple Maps"),
+    ("yelp.", "reviews", "Yelp"), ("angi.", "reviews", "Angi"), ("thumbtack.", "reviews", "Thumbtack"), ("homeadvisor.", "reviews", "HomeAdvisor"),
+    ("bbb.org", "reviews", "Better Business Bureau"), ("nextdoor.", "reviews", "Nextdoor"),
+    ("facebook.", "social", "Facebook"), ("instagram.", "social", "Instagram"), ("tiktok.", "social", "TikTok"),
+    ("yellowpages.", "directory", "Yellow Pages"), ("manta.", "directory", "Manta"),
+    ("superpages.", "directory", "Superpages"), ("mapquest.", "directory", "MapQuest"),
+    ("amazon.", "marketplace", "Amazon"), ("ebay.", "marketplace", "eBay"), ("etsy.", "marketplace", "Etsy"),
+    ("backmarket.", "marketplace", "Back Market"), ("walmart.", "marketplace", "Walmart"),
+    ("reddit.", "forum", "Reddit"), ("quora.", "forum", "Quora"),
+]
+
+
+def domain_of(url: str) -> str:
+    d = re.sub(r"^https?://", "", url or "").split("/")[0].lower()
+    return d[4:] if d.startswith("www.") else d
+
+
+def classify_source(domain: str, biz: dict) -> tuple[str, str]:
+    own = domain_of(biz.get("website") or "")
+    if own and (domain == own or domain.endswith("." + own)):
+        return "own", "Your website"
+    for frag, kind, label in SOURCE_KINDS:
+        if frag in domain:
+            return kind, label
+    return "other", domain
+
+
+# What a demo assistant "reads". The stale listing is where old or wrong facts come from.
+DEMO_SOURCES = {
+    "trades": ["google.com/maps", "yelp.com", "angi.com", "nextdoor.com", "bbb.org"],
+    "cleaning": ["google.com/maps", "yelp.com", "thumbtack.com", "angi.com", "nextdoor.com", "facebook.com"],
+    "services": ["google.com/maps", "yelp.com", "facebook.com", "nextdoor.com"],
+    "ecommerce": ["etsy.com", "ebay.com", "instagram.com", "reddit.com"],
+    "tech": ["ebay.com", "amazon.com", "reddit.com", "backmarket.com"],
+}
+DEMO_STALE = {"cleaning": "yellowpages.com", "trades": "yellowpages.com", "services": "yellowpages.com", "ecommerce": "ebay.com/old-listing",
+              "tech": "ebay.com/old-listing"}
+DESCRIPTORS = {
+    "cleaning": (["reliable", "thorough", "fair prices", "eco-friendly", "Spanish-speaking", "same-week openings"],
+                 ["hard to book", "small team"]),
+    "trades": (["family-owned", "free estimates", "storm repair", "fair prices", "fast response", "Spanish-speaking"],
+               ["hard to reach", "small crew"]),
+    "services": (["honest", "fair prices", "friendly", "Spanish-speaking", "quick service"], ["long waits"]),
+    "ecommerce": (["handmade", "quality leather", "authentic", "gift-worthy", "bilingual support"], ["slow shipping"]),
+    "tech": (["affordable", "tested devices", "good warranty", "good battery life"], ["older models", "limited stock"]),
+}
 
 
 # ------------------------------------------------- Claim Extraction Agent
@@ -225,6 +487,12 @@ FORMAT_HINT = {
     "stock": '"in stock" or "out of stock"',
     "shipping": 'delivery time in days, like "3-5"',
     "returns": 'return window in days, like "30", or "none"',
+    "spec": 'number with unit, like "16 GB" or "14 in"',
+    "feature": '"yes" or "no"',
+    "warranty": 'warranty length in months, like "12", or "none"',
+    "license": 'the license or registration number, or "not licensed"',
+    "insurance": '"yes" or "no"',
+    "service_area": "comma-separated list of cities served",
 }
 
 
@@ -240,7 +508,10 @@ Fact keys you may report, with required formats:
 Return ONLY JSON:
 {{"mentioned": bool, "position": 1-based rank of the business among businesses listed or null,
  "competitors": [other business names mentioned],
- "claims": [{{"fact_key": key from the list, "value": value in the required format}}]}}
+ "claims": [{{"fact_key": key from the list, "value": value in the required format}}],
+ "description": one sentence, in English, on how the answer describes "{biz['name']}" ("" if not mentioned),
+ "descriptors": [up to 5 short words or phrases the answer associates with "{biz['name']}"],
+ "sentiment": "positive" | "neutral" | "negative" (how the answer presents "{biz['name']}")}}
 Only include claims the answer makes about "{biz['name']}" itself. Do not guess.
 
 Answer:
@@ -248,7 +519,9 @@ Answer:
     try:
         data = parse_json(_utility(prompt))
         return {"mentioned": bool(data.get("mentioned")), "position": data.get("position"),
-                "competitors": data.get("competitors", []), "claims": data.get("claims", [])}
+                "competitors": data.get("competitors", []), "claims": data.get("claims", []),
+                "description": data.get("description") or "", "descriptors": data.get("descriptors") or [],
+                "sentiment": data.get("sentiment") or "neutral"}
     except Exception:
         mentioned = biz["name"].lower() in answer.lower()
         return {"mentioned": mentioned, "position": None,
@@ -274,6 +547,19 @@ def _distort(fact: dict) -> str | None:
         return "7-10"
     if cat == "returns":
         return "none" if v not in {"none", "0"} else "30"
+    if cat == "spec":
+        m = re.match(r"(\d+(?:\.\d+)?)(.*)", v.strip())
+        return f"{float(m.group(1)) / 2:g}{m.group(2)}" if m else None
+    if cat == "feature":
+        return "no" if v.lower() in {"yes", "sí", "si"} else "yes"
+    if cat == "warranty":
+        return "3" if v != "3" else "none"
+    if cat == "license":
+        return "not licensed"
+    if cat == "insurance":
+        return "no" if v.lower() in {"yes", "sí", "si"} else "yes"
+    if cat == "service_area":
+        return "Fort Worth, Arlington"
     if cat == "contact":
         digits = re.sub(r"\D", "", v)
         return f"({digits[:3]}) {digits[3:6]}-0199" if len(digits) >= 10 else None
@@ -283,6 +569,28 @@ def _distort(fact: dict) -> str | None:
 def _phrase(fact: dict, value: str, lang: str) -> str:
     cat = fact["category"]
     label = fact["label"] if lang == "en" else (fact.get("label_es") or fact["label"])
+    if cat == "spec":
+        return f"{value} {label}" if lang == "en" else f"{label} de {value}"
+    if cat == "feature":
+        yes = value.lower() in {"yes", "sí", "si"}
+        if lang == "en":
+            return f"with {label.lower()}" if yes else f"no {label.lower()}"
+        return f"con {label.lower()}" if yes else f"sin {label.lower()}"
+    if cat == "warranty":
+        if value in {"none", "0"}:
+            return "sold as-is with no warranty" if lang == "en" else "sin garantía"
+        return f"{value}-month warranty" if lang == "en" else f"garantía de {value} meses"
+    if cat == "license":
+        if value.strip().lower() in {"none", "no", "not licensed", "unlicensed"}:
+            return "no license on file" if lang == "en" else "sin licencia registrada"
+        return f"license #{value}" if lang == "en" else f"licencia #{value}"
+    if cat == "insurance":
+        yes = value.lower() in {"yes", "sí", "si"}
+        if lang == "en":
+            return "fully insured" if yes else "no proof of insurance"
+        return "con seguro" if yes else "sin comprobante de seguro"
+    if cat == "service_area":
+        return f"serves {value}" if lang == "en" else f"da servicio en {value}"
     prod = (fact.get("product") if lang == "en" else fact.get("product_es") or fact.get("product")) or ""
     if prod:
         label = prod
@@ -317,14 +625,26 @@ def _phrase(fact: dict, value: str, lang: str) -> str:
     return f"{label}: {value}"
 
 
-FILLER_EN = ["well reviewed for honest pricing", "popular with locals", "known for quick turnaround",
+FILLER_EN = ["well reviewed for honest pricing", "popular with locals", "friendly, fast service",
              "strong reviews for customer service"]
-FILLER_ES = ["con buenas reseñas por precios justos", "muy popular en la zona", "conocido por su rapidez",
+FILLER_ES = ["con buenas reseñas por precios justos", "muy popular en la zona", "servicio amable y rápido",
              "buenas opiniones sobre el servicio"]
 SHOP_FILLER_EN = ["fast shipping and good reviews", "wide selection", "known for quality craftsmanship",
                   "strong reviews for customer service"]
 SHOP_FILLER_ES = ["envíos rápidos y buenas reseñas", "gran variedad", "conocida por su calidad artesanal",
                   "buenas opiniones sobre el servicio"]
+CLEAN_FILLER_EN = ["great reviews for deep cleans", "flexible scheduling", "eco-friendly products",
+                   "background-checked staff"]
+CLEAN_FILLER_ES = ["buenas reseñas por limpiezas profundas", "horarios flexibles", "productos ecológicos",
+                   "personal con revisión de antecedentes"]
+TRADES_FILLER_EN = ["free estimates and good reviews", "family-owned, fast response", "licensed and insured",
+                    "popular for storm repairs"]
+TRADES_FILLER_ES = ["estimados gratis y buenas reseñas", "negocio familiar, responde rápido", "con licencia y seguro",
+                    "popular para reparaciones por tormenta"]
+TECH_FILLER_EN = ["certified refurbished with a 90-day warranty", "low prices on older models",
+                  "large selection of laptops", "good reviews for battery quality"]
+TECH_FILLER_ES = ["reacondicionados certificados con garantía de 90 días", "precios bajos en modelos anteriores",
+                  "gran selección de laptops", "buenas reseñas por la calidad de las baterías"]
 
 
 def simulate(provider: str, journey: dict, biz: dict, facts: list[dict], competitors: list[str],
@@ -382,23 +702,47 @@ def simulate(provider: str, journey: dict, biz: dict, facts: list[dict], competi
                 parts.append(phrase)
             detail = ", ".join(parts) or ("well-rated seller" if lang == "en" else "vendedor bien calificado")
         else:
-            shop = biz.get("segment") == "ecommerce"
-            pool = (SHOP_FILLER_EN if lang == "en" else SHOP_FILLER_ES) if shop else (
-                FILLER_EN if lang == "en" else FILLER_ES)
+            pool = {"ecommerce": (SHOP_FILLER_EN, SHOP_FILLER_ES), "tech": (TECH_FILLER_EN, TECH_FILLER_ES),
+                    "trades": (TRADES_FILLER_EN, TRADES_FILLER_ES),
+                    "cleaning": (CLEAN_FILLER_EN, CLEAN_FILLER_ES)}.get(
+                biz.get("segment"), (FILLER_EN, FILLER_ES))[0 if lang == "en" else 1]
             detail = r.choice(pool)
         lines.append(f"{i}. {name}: {detail}.")
-    if biz.get("segment") == "ecommerce":
+    if is_shop(biz):
         intro = "Here are some good places to shop online:" if lang == "en" else "Estas tiendas en línea son buenas opciones:"
         outro = ("Prices and stock change often, so confirm on the store's site." if lang == "en"
                  else "Los precios y el inventario cambian, confirma en la tienda.")
     else:
         intro = (f"Here are a few options in {biz['city']}:" if lang == "en"
                  else f"Aquí tienes algunas opciones en {biz['city']}:")
-        outro = ("Check current hours before visiting." if lang == "en"
-                 else "Confirma el horario antes de ir.")
+        outro = (("Ask for a written estimate and check the license before hiring." if lang == "en"
+                  else "Pide un estimado por escrito y revisa la licencia antes de contratar.")
+                 if biz.get("segment") == "trades" else
+                 ("Confirm what’s included and whether they serve your area." if lang == "en"
+                  else "Confirma qué incluye y si dan servicio en tu zona.")
+                 if biz.get("segment") == "cleaning" else
+                 "Check current hours before visiting." if lang == "en" else "Confirma el horario antes de ir.")
     text = "\n".join([intro, *lines, outro])
+    seg = biz.get("segment") if biz.get("segment") in DEMO_SOURCES else "services"
+    wrong = any(c["value"] != by_key[c["fact_key"]]["value"] for c in claims)
+    pool = DEMO_SOURCES[seg][:]
+    r.shuffle(pool)
+    read = pool[:r.randint(1, 3)]
+    if mentioned and biz.get("website") and r.random() < (0.7 if fixed_keys else 0.35):  # fixes publish to your site
+        read.insert(0, domain_of(biz["website"]))
+    if (wrong and r.random() < 0.7) or r.random() < 0.08:  # otherwise a wrong claim has no source: made up
+        read.append(DEMO_STALE[seg])
+    good, bad = DESCRIPTORS[seg]
+    words = r.sample(good, 2) + ([r.choice(bad)] if wrong and r.random() < 0.5 else [])
+    serious = any(by_key[c["fact_key"]]["category"] in {"license", "insurance", "contact"} and
+                  c["value"] != by_key[c["fact_key"]]["value"] for c in claims)
     return text, {"mentioned": mentioned, "position": position,
-                  "competitors": [n for n in names if n != biz["name"]], "claims": claims}
+                  "competitors": [n for n in names if n != biz["name"]], "claims": claims,
+                  "description": (f"A {biz['category']} known for {words[0]} and {words[1]}."
+                                  if mentioned else ""),
+                  "descriptors": words if mentioned else [],
+                  "sentiment": "negative" if serious else ("positive" if mentioned and not wrong else "neutral"),
+                  "sources": [{"url": f"https://{d}", "title": ""} for d in read]}
 
 
 # ---------------------------------------------------------------- Fix Agent
@@ -410,7 +754,9 @@ def _jsonld(biz: dict, fact: dict | None) -> dict:
         data["knowsLanguage"] = ["en", "es"]
         return data
     cat, v = fact["category"], fact["value"]
-    if biz.get("segment") == "ecommerce":
+    if biz.get("segment") == "trades":
+        data["@type"] = "HomeAndConstructionBusiness"
+    if is_shop(biz):
         data["@type"] = "OnlineStore"
         data.pop("address", None)
         data["url"] = biz.get("website") or ""
@@ -421,8 +767,23 @@ def _jsonld(biz: dict, fact: dict | None) -> dict:
         if cat == "stock":
             out = "out" in v.lower()
             offer["availability"] = "https://schema.org/" + ("OutOfStock" if out else "InStock")
-        return {"@context": "https://schema.org", "@type": "Product", "name": fact["product"],
-                "brand": {"@type": "Brand", "name": biz["name"]}, "offers": offer}
+        product = {"@context": "https://schema.org", "@type": "Product", "name": fact["product"],
+                   "brand": {"@type": "Brand", "name": biz["name"]}, "offers": offer}
+        if cat in {"spec", "feature"}:
+            product["additionalProperty"] = {"@type": "PropertyValue", "name": fact["label"], "value": v}
+        return product
+    if cat == "license":
+        data["hasCredential"] = {"@type": "EducationalOccupationalCredential", "credentialCategory": "license",
+                                 "identifier": v}
+        return data
+    if cat == "service_area":
+        data["areaServed"] = [{"@type": "City", "name": c.strip()} for c in v.split(",") if c.strip()]
+        return data
+    if cat == "warranty":
+        data["makesOffer"] = {"@type": "Offer", "warranty": {
+            "@type": "WarrantyPromise", "durationOfWarranty": {
+                "@type": "QuantitativeValue", "value": 0 if v in {"none", "0"} else v, "unitCode": "MON"}}}
+        return data
     if cat == "shipping":
         lo, _, hi = v.partition("-")
         data["makesOffer"] = {"@type": "Offer", "shippingDetails": {
@@ -469,11 +830,16 @@ def template_fix(inc: dict, biz: dict, fact: dict | None) -> dict:
             "explanation_es": f"Cuando los clientes preguntan por “{need}” en "
                               f"{'español' if inc['language']=='es' else 'inglés'}, la IA suele recomendar otros "
                               f"negocios. Tu sitio web no dice claramente que ofreces esto.",
-            "website_text_en": (f"Shop {need.lower()} at {biz['name']}: handmade, ships nationwide, easy returns. "
+            "website_text_en": (f"Shop {need.lower()} at {biz['name']}: certified refurbished, full spec sheet, "
+                                f"warranty included. Se habla español." if biz.get("segment") == "tech" else
+                                f"Shop {need.lower()} at {biz['name']}: handmade, ships nationwide, easy returns. "
                                 f"Se habla español." if biz.get("segment") == "ecommerce" else
                                 f"Looking for {need.lower()} in {biz['city']}? {biz['name']} can help. "
                                 f"Call us or stop by. Se habla español."),
-            "website_text_es": (f"Compra {need.lower()} en {biz['name']}: hecho a mano, envíos a todo el país. "
+            "website_text_es": (f"Compra {need.lower()} en {biz['name']}: reacondicionado certificado, "
+                                f"especificaciones completas y garantía incluida. We speak English too."
+                                if biz.get("segment") == "tech" else
+                                f"Compra {need.lower()} en {biz['name']}: hecho a mano, envíos a todo el país. "
                                 f"We speak English too." if biz.get("segment") == "ecommerce" else
                                 f"¿Buscas {need.lower()} en {biz['city']}? En {biz['name']} te ayudamos. "
                                 f"Llámanos o visítanos. We speak English too."),
@@ -482,6 +848,20 @@ def template_fix(inc: dict, biz: dict, fact: dict | None) -> dict:
         }
     label, truth, ai = fact_name(fact), inc["verified_value"], inc["ai_value"]
     label_es = fact_name(fact, "es")
+    if inc["type"] == "source_conflict":
+        site = inc.get("provider") or "a listing"
+        return {
+            "explanation_en": f"{site} shows your {label.lower()} as “{display_value(fact, ai)}”, but the verified value is "
+                              f"“{display_value(fact, truth)}”. AI assistants read this page, so they may repeat it.",
+            "explanation_es": f"{site} muestra tu {label_es.lower()} como “{display_value(fact, ai, 'es')}”, pero el dato "
+                              f"verificado es “{display_value(fact, truth, 'es')}”. Los asistentes de IA leen esta página y "
+                              f"pueden repetirlo.",
+            "website_text_en": f"{label[:1].upper() + label[1:]}: {display_value(fact, truth)}",
+            "website_text_es": f"{label_es[:1].upper() + label_es[1:]}: {display_value(fact, truth, 'es')}",
+            "jsonld": _jsonld(biz, fact),
+            "action": f"Claim or log in to your listing on {site} and correct it. If you can't, ask the site to update or "
+                      f"remove it. Then we re-check the page on the next scan.",
+        }
     if fact["category"] == "contact":
         return {
             "explanation_en": f"{who} is giving customers the wrong phone number ({ai}). Your verified number is "
@@ -494,7 +874,7 @@ def template_fix(inc: dict, biz: dict, fact: dict | None) -> dict:
             "action": "Check directory listings for the wrong number, correct them, and report the answer "
                       "through the assistant's feedback button. Escalate to consultant today.",
         }
-    shop = biz.get("segment") == "ecommerce"
+    shop = is_shop(biz)
     ai_en, truth_en = display_value(fact, ai), display_value(fact, truth)
     ai_es, truth_es = display_value(fact, ai, "es"), display_value(fact, truth, "es")
     return {
@@ -510,9 +890,15 @@ def template_fix(inc: dict, biz: dict, fact: dict | None) -> dict:
         "website_text_en": f"{label[:1].upper() + label[1:]}: {truth_en}",
         "website_text_es": f"{label_es[:1].upper() + label_es[1:]}: {truth_es}",
         "jsonld": _jsonld(biz, fact),
-        "action": ("Update the product page and your store feed (Shopify, eBay) so every channel shows the same "
+        "action": ("Show the license number and insurance on your website, Google Business Profile, Angi, Yelp and "
+                   "Nextdoor, and link to the official license lookup so AI can verify it. Escalate today."
+                   if fact["category"] in {"license", "insurance"} else
+                   "Update the spec table on the product page and every marketplace listing (Amazon, eBay, "
+                   "Back Market) so they match the manufacturer spec sheet, then add this structured data."
+                   if biz.get("segment") == "tech" and fact["category"] in {"spec", "feature"} else
+                   "Update the product page and your store feed (Shopify, eBay) so every channel shows the same "
                    "value, then add this structured data to the product page."
-                   if biz.get("segment") == "ecommerce" else
+                   if shop else
                    "Make this fact clear on your website, then update Google Business Profile and Yelp to match."),
     }
 
